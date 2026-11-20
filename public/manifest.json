@@ -1,0 +1,33 @@
+{
+  "id": "/",
+  "name": "tradebook",
+  "short_name": "tradebook",
+  "description": "Offline-first prop-firm trading journal, risk & lot size calculator, live IST/NY killzone clocks, and challenge ROI ledger.",
+  "display": "standalone",
+  "orientation": "any",
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#060a14",
+  "theme_color": "#060a14",
+  "categories": ["finance", "productivity", "business"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
