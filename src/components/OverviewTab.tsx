@@ -125,7 +125,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--text-primary)] [text-wrap:balance]">
-                Welcome back, Mr. Manjeet Chichkhede
+                Welcome back, {settings.traderName || 'Trader'}
               </h1>
               <p className="mt-1 text-sm text-[var(--text-secondary)]">
                 Today&apos;s Net P&amp;L:{' '}
@@ -184,7 +184,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   <span>UTC+5:30</span>
                 </div>
                 <p className="mt-1 font-mono-num text-xl sm:text-2xl font-bold text-[var(--text-primary)] tracking-tight">
-                  {clocks.ist.formatted24}
+                  {clocks.ist.formatted24}{' '}
+                  <span className="text-xs sm:text-sm font-medium text-[var(--text-secondary)] whitespace-nowrap">
+                    ({clocks.ist.formatted12} {clocks.ist.ampm})
+                  </span>
                 </p>
                 <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{clocks.ist.dateLabel}</p>
               </div>

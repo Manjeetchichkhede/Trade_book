@@ -75,6 +75,7 @@ export interface RoiEntry {
 }
 
 export interface AppSettings {
+  traderName: string;
   theme: ThemeId;
   font: FontId;
   clockStyle: ClockStyleId;
@@ -83,6 +84,7 @@ export interface AppSettings {
   glassPage: boolean;
   glassNav: boolean;
   bgGradient: boolean;
+  cursorAnimation: boolean;
   liveClocksOverview: boolean;
   breachGuardrail: boolean;
   compactAccounts: boolean;

@@ -26,6 +26,8 @@ import { LotSizeTab } from './components/LotSizeTab';
 import { SessionsTab } from './components/SessionsTab';
 import { RoiTab } from './components/RoiTab';
 import { SettingsModal } from './components/SettingsModal';
+import { StartupNameModal } from './components/StartupNameModal';
+import { CursorBackground } from './components/CursorBackground';
 
 const THEME_COLORS: Record<AppSettings['theme'], string> = {
   dark: '#060a14',
@@ -174,9 +176,9 @@ export default function App() {
     setActiveTab('roi');
   }, []);
 
-  const handleBackupJson = useCallback(async () => {
+  const handleBuildBackupPayload = useCallback(async (): Promise<BackupPayload> => {
     const images = await getAllImages();
-    const payload: BackupPayload = {
+    return {
       version: '2.4.0',
       exportedAt: new Date().toISOString(),
       accounts,
@@ -185,6 +187,39 @@ export default function App() {
       settings,
       images,
     };
+  }, [accounts, trades, roiEntries, settings]);
+
+  const handleApplyBackupPayload = useCallback(
+    async (parsed: Partial<BackupPayload>): Promise<{ ok: boolean; message: string }> => {
+      if (!Array.isArray(parsed.accounts) || !Array.isArray(parsed.trades)) {
+        return { ok: false, message: 'Invalid backup file: missing accounts or trades.' };
+      }
+      await clearAllImages();
+      if (parsed.images && typeof parsed.images === 'object') {
+        await Promise.all(
+          Object.entries(parsed.images).map(([id, dataUrl]) => saveImage(id, String(dataUrl)))
+        );
+      }
+      setAccounts(parsed.accounts);
+      setTrades(parsed.trades);
+      setRoiEntries(Array.isArray(parsed.roiEntries) ? parsed.roiEntries : []);
+      if (parsed.settings) {
+        setSettings((prev) => ({
+          ...DEFAULT_SETTINGS,
+          ...parsed.settings,
+          traderName: parsed.settings?.traderName || prev.traderName,
+        }));
+      }
+      return {
+        ok: true,
+        message: `Restored ${parsed.accounts.length} accounts & ${parsed.trades.length} trades.`,
+      };
+    },
+    []
+  );
+
+  const handleBackupJson = useCallback(async () => {
+    const payload = await handleBuildBackupPayload();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -192,37 +227,19 @@ export default function App() {
     a.download = `tradebook-backup-${getTodayISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [accounts, trades, roiEntries, settings]);
+  }, [handleBuildBackupPayload]);
 
   const handleRestoreJson = useCallback(
     async (file: File): Promise<{ ok: boolean; message: string }> => {
       try {
         const text = await file.text();
         const parsed = JSON.parse(text) as Partial<BackupPayload>;
-        if (!Array.isArray(parsed.accounts) || !Array.isArray(parsed.trades)) {
-          return { ok: false, message: 'Invalid backup file: missing accounts or trades.' };
-        }
-        await clearAllImages();
-        if (parsed.images && typeof parsed.images === 'object') {
-          await Promise.all(
-            Object.entries(parsed.images).map(([id, dataUrl]) => saveImage(id, String(dataUrl)))
-          );
-        }
-        setAccounts(parsed.accounts);
-        setTrades(parsed.trades);
-        setRoiEntries(Array.isArray(parsed.roiEntries) ? parsed.roiEntries : []);
-        if (parsed.settings) {
-          setSettings({ ...DEFAULT_SETTINGS, ...parsed.settings });
-        }
-        return {
-          ok: true,
-          message: `Restored ${parsed.accounts.length} accounts & ${parsed.trades.length} trades.`,
-        };
+        return await handleApplyBackupPayload(parsed);
       } catch {
         return { ok: false, message: 'Could not parse JSON backup file.' };
       }
     },
-    []
+    [handleApplyBackupPayload]
   );
 
   const handleResetDemoData = useCallback(async () => {
@@ -246,6 +263,11 @@ export default function App() {
     <div className="relative min-h-screen w-full overflow-x-clip">
       {/* Fixed ambient multi-tone radial background gradient */}
       <div className="tb-ambient-bg" aria-hidden="true" />
+      {/* Interactive cursor-reactive ambient animation on Windows/desktop */}
+      <CursorBackground
+        enabled={settings.cursorAnimation && settings.bgGradient}
+        theme={settings.theme}
+      />
 
       <div className="relative z-10 flex min-h-screen flex-col">
         <Navbar
@@ -329,10 +351,18 @@ export default function App() {
         open={settingsOpen}
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
+        onBuildBackupPayload={handleBuildBackupPayload}
+        onApplyBackupPayload={handleApplyBackupPayload}
         onBackupJson={handleBackupJson}
         onRestoreJson={handleRestoreJson}
         onResetDemoData={handleResetDemoData}
         onClose={() => setSettingsOpen(false)}
+      />
+
+      {/* Startup Trader Name Prompt (shown until trader name is saved) */}
+      <StartupNameModal
+        open={hydrated && !settings.traderName.trim()}
+        onSaveName={(name) => handleUpdateSettings({ traderName: name })}
       />
     </div>
   );

@@ -28,7 +28,11 @@ const NAV_ITEMS: { id: TabId; label: string; icon: React.ComponentType<{ classNa
     { id: 'roi', label: 'ROI', icon: TrendingUp },
   ];
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onOpenSettings }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  activeTab,
+  onTabChange,
+  onOpenSettings,
+}) => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
@@ -71,26 +75,21 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, onOpenSe
     <>
       <header className="sticky top-0 z-30 w-full px-4 sm:px-6 pt-3 pb-2">
         <div className="mx-auto max-w-[1360px] flex items-center justify-between gap-4">
-          {/* Left: Brand & Greeting */}
+          {/* Left: Brand Logo & Wordmark */}
           <div className="flex items-center gap-3 min-w-0 shrink-0">
             <button
               type="button"
               onClick={() => onTabChange('overview')}
-              className="flex items-center gap-2.5 text-left group focus:outline-none"
+              className="flex items-center gap-3 text-left group focus:outline-none cursor-pointer"
               aria-label="Go to Overview"
             >
               <TradebookLogo
-                size={36}
+                size={40}
                 className="rounded-xl shadow-md transition-transform duration-150 group-hover:scale-105 shrink-0"
               />
-              <div className="leading-tight">
-                <span className="block text-lg font-bold tracking-tight lowercase text-[var(--text-primary)] whitespace-nowrap">
-                  tradebook
-                </span>
-                <span className="hidden xl:block text-[11px] text-[var(--text-muted)] whitespace-nowrap">
-                  Welcome back, Mr. Manjeet Chichkhede
-                </span>
-              </div>
+              <span className="text-2xl sm:text-[26px] font-bold tracking-tight lowercase leading-none text-[var(--text-primary)] whitespace-nowrap">
+                tradebook
+              </span>
             </button>
           </div>
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tradebook-v2.4.0';
+const CACHE_NAME = 'tradebook-v2.4.1';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -8,6 +8,20 @@ const APP_SHELL = [
   '/pwa-512x512.png',
   '/apple-touch-icon.png',
 ];
+
+function isDevModuleRequest(url) {
+  const path = url.pathname;
+  return (
+    path.startsWith('/node_modules/') ||
+    path.startsWith('/src/') ||
+    path.startsWith('/@vite') ||
+    path.startsWith('/@fs/') ||
+    path.startsWith('/@id/') ||
+    path.startsWith('/@react-refresh') ||
+    url.searchParams.has('v') ||
+    url.searchParams.has('t')
+  );
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -36,6 +50,16 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
+  // Never cache Vite dev server modules or Google API / Auth requests
+  if (
+    isDevModuleRequest(url) ||
+    url.hostname.includes('googleapis.com') ||
+    url.hostname.includes('firebaseapp.com') ||
+    url.hostname.includes('gstatic.com') === false && url.origin !== self.location.origin && !url.hostname.includes('fonts.googleapis.com')
+  ) {
+    return;
+  }
+
   // Navigation requests: network-first, fallback to cached index.html
   if (request.mode === 'navigate') {
     event.respondWith(
@@ -52,7 +76,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets & fonts: cache-first with background refresh
+  // Production static assets & Google Fonts: cache-first with background refresh
   event.respondWith(
     caches.match(request).then((cached) => {
       const networkFetch = fetch(request)

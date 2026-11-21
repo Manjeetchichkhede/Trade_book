@@ -2,6 +2,7 @@ import { AppSettings, PropAccount, RoiEntry, Trade } from '../types';
 import { addDaysISO, getTodayISO } from '../utils/format';
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  traderName: '',
   theme: 'dark',
   font: 'inter',
   clockStyle: 'modern',
@@ -10,6 +11,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   glassPage: true,
   glassNav: true,
   bgGradient: true,
+  cursorAnimation: true,
   liveClocksOverview: true,
   breachGuardrail: true,
   compactAccounts: false,

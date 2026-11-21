@@ -10,18 +10,22 @@ import {
 } from 'lucide-react';
 import {
   AppSettings,
+  BackupPayload,
   ClockStyleId,
   CurrencyId,
   FontId,
   ThemeId,
 } from '../types';
 import { TradebookLogo } from './TradebookLogo';
+import { GoogleDriveBackupCard } from './GoogleDriveBackupCard';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface SettingsModalProps {
   open: boolean;
   settings: AppSettings;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
+  onBuildBackupPayload: () => Promise<BackupPayload>;
+  onApplyBackupPayload: (payload: Partial<BackupPayload>) => Promise<{ ok: boolean; message: string }>;
   onBackupJson: () => Promise<void>;
   onRestoreJson: (file: File) => Promise<{ ok: boolean; message: string }>;
   onResetDemoData: () => Promise<void>;
@@ -67,6 +71,11 @@ const TOGGLE_ITEMS: { key: keyof AppSettings; label: string; desc: string }[] = 
     desc: 'Ambient multi-tone radial glow behind all content',
   },
   {
+    key: 'cursorAnimation',
+    label: 'Cursor Background Animation',
+    desc: 'Interactive luminous backdrop following your mouse cursor on Windows/desktop',
+  },
+  {
     key: 'liveClocksOverview',
     label: 'Live Clocks on Overview',
     desc: 'Show ticking IST & NY digital clocks inside Hero card',
@@ -92,6 +101,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   open,
   settings,
   onUpdateSettings,
+  onBuildBackupPayload,
+  onApplyBackupPayload,
   onBackupJson,
   onRestoreJson,
   onResetDemoData,
@@ -173,6 +184,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </div>
         )}
+
+        {/* Trader Profile Name */}
+        <section>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2">
+            Trader Greeting Name
+          </h3>
+          <input
+            type="text"
+            maxLength={60}
+            value={settings.traderName}
+            onChange={(e) => onUpdateSettings({ traderName: e.target.value })}
+            placeholder="Enter your trader name..."
+            className="tb-input w-full rounded-xl px-3.5 py-2.5 text-sm"
+          />
+          <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
+            Saved locally and displayed in the header and Overview welcome greeting.
+          </p>
+        </section>
 
         {/* Theme */}
         <section>
@@ -345,10 +374,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </section>
 
         {/* Data Backup & Restore */}
-        <section>
-          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">
-            Data Backup & Restore
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+            Data Backup &amp; Restore
           </h3>
+
+          {/* Google Drive Cloud Backup */}
+          <GoogleDriveBackupCard
+            onBuildBackupPayload={onBuildBackupPayload}
+            onApplyBackupPayload={onApplyBackupPayload}
+          />
+
           <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
