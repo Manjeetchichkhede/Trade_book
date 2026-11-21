@@ -106,14 +106,8 @@ export interface EconomicNewsEvent {
 }
 
 export interface GuardrailConfig {
-  maxTradesPerDay: number;
-  maxConsecutiveLosses: number;
-  cooldownMinutes: number;
   newsBufferMinutes: 2 | 5 | 15;
-  enableTiltGuard: boolean;
   enableNewsWarnings: boolean;
-  lockoutUntilIso: string | null;
-  lockoutReason: string | null;
   checklistDate: string;
 }
 

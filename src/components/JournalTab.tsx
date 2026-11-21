@@ -8,12 +8,10 @@ import {
   Download,
   ImagePlus,
   List,
-  Lock,
   Pencil,
   Plus,
   Search,
   ShieldAlert,
-  ShieldCheck,
   Trash2,
   Upload,
   X,
@@ -33,11 +31,7 @@ import {
 } from '../types';
 import { compressImageFile, saveImage } from '../db/storage';
 import { computeDrawdownImpact } from '../utils/calculations';
-import {
-  computeDailyDiscipline,
-  evaluateNewsEvents,
-  getActiveNewsAlert,
-} from '../utils/guardrails';
+import { evaluateNewsEvents, getActiveNewsAlert } from '../utils/guardrails';
 import { formatMoney, formatR, formatShortDate, generateId, getTodayISO } from '../utils/format';
 import { ChartLightboxModal } from './ChartLightboxModal';
 import { ChartAnnotatorModal } from './ChartAnnotatorModal';
@@ -76,17 +70,12 @@ export const JournalTab: React.FC<JournalTabProps> = ({
 }) => {
   const loggerRef = useRef<HTMLDivElement | null>(null);
 
-  // Live clock tick for guardrail & news restriction countdowns
+  // Live clock tick for economic news restriction countdowns
   const [now, setNow] = useState<Date>(() => new Date());
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
-
-  const discipline = useMemo(
-    () => computeDailyDiscipline(trades, guardrailConfig, now),
-    [trades, guardrailConfig, now]
-  );
 
   const activeNewsAlert = useMemo(() => {
     if (!guardrailConfig.enableNewsWarnings) return null;
@@ -120,7 +109,6 @@ export const JournalTab: React.FC<JournalTabProps> = ({
   const [afterPreview, setAfterPreview] = useState<string | null>(null);
   const [annotatingPreview, setAnnotatingPreview] = useState<'before' | 'after' | null>(null);
   const [guardrailOverride, setGuardrailOverride] = useState<boolean>(false);
-  const [lockoutOverride, setLockoutOverride] = useState<boolean>(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [csvImportOpen, setCsvImportOpen] = useState<boolean>(false);
 
@@ -185,10 +173,6 @@ export const JournalTab: React.FC<JournalTabProps> = ({
     e.preventDefault();
     if (!accountId) return;
 
-    if (discipline.isLockedOut && !lockoutOverride) {
-      return;
-    }
-
     if (settings.breachGuardrail && drawdownPreview?.anyBreach && !guardrailOverride) {
       setGuardrailOverride(true);
       return;
@@ -228,7 +212,6 @@ export const JournalTab: React.FC<JournalTabProps> = ({
     setBeforePreview(null);
     setAfterPreview(null);
     setGuardrailOverride(false);
-    setLockoutOverride(false);
     setSelectedCalDate(date);
     setSaveFeedback(`Logged ${newTrade.symbol} ${newTrade.side} (${formatR(newTrade.rMultiple)})`);
     window.setTimeout(() => setSaveFeedback(null), 3000);
@@ -356,81 +339,38 @@ export const JournalTab: React.FC<JournalTabProps> = ({
           )}
         </div>
 
-        {/* Active Session Lockout / High-Impact News Guardrail Banners */}
-        {(discipline.isLockedOut || activeNewsAlert) && (
-          <div className="mt-4 space-y-2.5">
-            {discipline.isLockedOut && (
-              <div className="rounded-xl border border-rose-500/45 bg-rose-500/12 p-3.5 space-y-2.5">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex items-start gap-2.5">
-                    <Lock className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-bold text-rose-400">
-                        Session Locked Out — {discipline.lockoutRemainingText} remaining
-                      </p>
-                      <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                        {discipline.lockoutReason ||
-                          'Cooldown active to protect prop capital from tilt or overtrading.'}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onNavigateTab('guard')}
-                    className="tb-btn-ghost inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold cursor-pointer whitespace-nowrap"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Open Guard
-                  </button>
-                </div>
-                <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={lockoutOverride}
-                    onChange={(e) => setLockoutOverride(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded accent-rose-500 cursor-pointer"
-                  />
-                  <span>
-                    I acknowledge the active cooldown and intentionally override to log a historical
-                    or approved trade.
-                  </span>
-                </label>
-              </div>
-            )}
-
-            {activeNewsAlert && (
-              <div
-                className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${
-                  activeNewsAlert.level === 'restricted'
-                    ? 'border-rose-500/45 bg-rose-500/12'
-                    : 'border-amber-500/40 bg-amber-500/12'
+        {/* Active High-Impact News Warning Banner */}
+        {activeNewsAlert && (
+          <div
+            className={`mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${
+              activeNewsAlert.level === 'restricted'
+                ? 'border-rose-500/45 bg-rose-500/12'
+                : 'border-amber-500/40 bg-amber-500/12'
+            }`}
+          >
+            <div className="flex items-center gap-2 text-xs">
+              <AlertTriangle
+                className={`w-4 h-4 shrink-0 ${
+                  activeNewsAlert.level === 'restricted' ? 'text-rose-400' : 'text-amber-400'
                 }`}
-              >
-                <div className="flex items-center gap-2 text-xs">
-                  <AlertTriangle
-                    className={`w-4 h-4 shrink-0 ${
-                      activeNewsAlert.level === 'restricted' ? 'text-rose-400' : 'text-amber-400'
-                    }`}
-                  />
-                  <span className="text-[var(--text-primary)]">
-                    <strong>
-                      {activeNewsAlert.level === 'restricted'
-                        ? 'Prop News Restriction Active:'
-                        : 'High-Impact News Approaching:'}
-                    </strong>{' '}
-                    {activeNewsAlert.event.event.currency} {activeNewsAlert.event.event.title} (
-                    {activeNewsAlert.event.istTimeLabel} · {activeNewsAlert.event.countdownText})
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onNavigateTab('guard')}
-                  className="text-xs font-semibold text-[var(--accent-text)] hover:underline cursor-pointer whitespace-nowrap"
-                >
-                  View Calendar →
-                </button>
-              </div>
-            )}
+              />
+              <span className="text-[var(--text-primary)]">
+                <strong>
+                  {activeNewsAlert.level === 'restricted'
+                    ? 'Prop News Restriction Active:'
+                    : 'High-Impact News Approaching:'}
+                </strong>{' '}
+                {activeNewsAlert.event.event.currency} {activeNewsAlert.event.event.title} (
+                {activeNewsAlert.event.istTimeLabel} · {activeNewsAlert.event.countdownText})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('guard')}
+              className="text-xs font-semibold text-[var(--accent-text)] hover:underline cursor-pointer whitespace-nowrap"
+            >
+              View Calendar →
+            </button>
           </div>
         )}
 
@@ -830,15 +770,9 @@ export const JournalTab: React.FC<JournalTabProps> = ({
 
               <button
                 type="submit"
-                disabled={discipline.isLockedOut && !lockoutOverride}
-                className="tb-btn-primary mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                className="tb-btn-primary mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold cursor-pointer"
               >
-                {discipline.isLockedOut && !lockoutOverride ? (
-                  <>
-                    <Lock className="w-4 h-4" />
-                    Session Locked — Override Above to Log
-                  </>
-                ) : guardrailOverride ? (
+                {guardrailOverride ? (
                   <>
                     <AlertTriangle className="w-4 h-4" />
                     Confirm &amp; Log Breaching Trade

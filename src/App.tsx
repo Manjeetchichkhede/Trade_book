@@ -27,7 +27,6 @@ import {
   DEFAULT_SETTINGS,
 } from './data/demoData';
 import { getTodayISO } from './utils/format';
-import { evaluatePostTradeTiltTrigger } from './utils/guardrails';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Navbar } from './components/Navbar';
 import { OverviewTab } from './components/OverviewTab';
@@ -232,25 +231,9 @@ export default function App() {
     setGuardrailConfig((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const handleAddTrade = useCallback(
-    (trade: Trade) => {
-      setTrades((prev) => {
-        const tilt = evaluatePostTradeTiltTrigger(trade, prev, guardrailConfig);
-        if (tilt.triggered) {
-          const untilIso = new Date(
-            Date.now() + guardrailConfig.cooldownMinutes * 60_000
-          ).toISOString();
-          setGuardrailConfig((cfg) => ({
-            ...cfg,
-            lockoutUntilIso: untilIso,
-            lockoutReason: tilt.reason,
-          }));
-        }
-        return [trade, ...prev];
-      });
-    },
-    [guardrailConfig]
-  );
+  const handleAddTrade = useCallback((trade: Trade) => {
+    setTrades((prev) => [trade, ...prev]);
+  }, []);
 
   const handleBulkImportTrades = useCallback((imported: Trade[]) => {
     if (imported.length === 0) return;
@@ -479,7 +462,6 @@ export default function App() {
 
               {activeTab === 'guard' && (
                 <GuardTab
-                  trades={trades}
                   settings={settings}
                   checklist={checklist}
                   newsEvents={newsEvents}

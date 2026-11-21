@@ -83,14 +83,8 @@ export function createDefaultChecklist(): ChecklistItem[] {
 
 export function createDefaultGuardrailConfig(): GuardrailConfig {
   return {
-    maxTradesPerDay: 3,
-    maxConsecutiveLosses: 2,
-    cooldownMinutes: 15,
     newsBufferMinutes: 2,
-    enableTiltGuard: true,
     enableNewsWarnings: true,
-    lockoutUntilIso: null,
-    lockoutReason: null,
     checklistDate: getTodayISO(),
   };
 }

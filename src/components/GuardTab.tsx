@@ -4,15 +4,12 @@ import {
   CalendarClock,
   Check,
   CheckSquare,
-  Flame,
-  Lock,
   Plus,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
   Square,
   Trash2,
-  Unlock,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -23,18 +20,12 @@ import {
   NewsCurrency,
   NewsImpact,
   PLAYBOOK_SETUPS,
-  Trade,
 } from '../types';
 import { createDefaultNewsEvents } from '../data/demoData';
-import {
-  computeDailyDiscipline,
-  evaluateNewsEvents,
-  getActiveNewsAlert,
-} from '../utils/guardrails';
+import { evaluateNewsEvents, getActiveNewsAlert } from '../utils/guardrails';
 import { generateId, getTodayISO } from '../utils/format';
 
 interface GuardTabProps {
-  trades: Trade[];
   settings: AppSettings;
   checklist: ChecklistItem[];
   newsEvents: EconomicNewsEvent[];
@@ -48,7 +39,6 @@ const CURRENCY_FILTERS: ('All' | NewsCurrency)[] = ['All', 'USD', 'EUR', 'GBP', 
 const BUFFER_OPTIONS: (2 | 5 | 15)[] = [2, 5, 15];
 
 export const GuardTab: React.FC<GuardTabProps> = ({
-  trades,
   settings,
   checklist,
   newsEvents,
@@ -63,9 +53,6 @@ export const GuardTab: React.FC<GuardTabProps> = ({
   const [setupFilter, setSetupFilter] = useState<ChecklistScope>('All');
   const [newCheckLabel, setNewCheckLabel] = useState('');
   const [newCheckScope, setNewCheckScope] = useState<ChecklistScope>('All');
-
-  // Unlock protocol 3-step check
-  const [resetSteps, setResetSteps] = useState<[boolean, boolean, boolean]>([false, false, false]);
 
   // News UI state
   const [currencyFilter, setCurrencyFilter] = useState<'All' | NewsCurrency>('All');
@@ -83,11 +70,6 @@ export const GuardTab: React.FC<GuardTabProps> = ({
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
-
-  const discipline = useMemo(
-    () => computeDailyDiscipline(trades, guardrailConfig, now),
-    [trades, guardrailConfig, now]
-  );
 
   const evaluatedNews = useMemo(
     () =>
@@ -125,30 +107,6 @@ export const GuardTab: React.FC<GuardTabProps> = ({
       }),
     [evaluatedNews, currencyFilter, impactFilter]
   );
-
-  const startManualLockout = (minutes: number, label: string) => {
-    const until = new Date(Date.now() + minutes * 60_000).toISOString();
-    setResetSteps([false, false, false]);
-    onUpdateGuardrailConfig({
-      lockoutUntilIso: until,
-      lockoutReason: `Session Lockout (${label}) — protect capital & review playbook.`,
-    });
-  };
-
-  const lockUntilEndOfDay = () => {
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-    setResetSteps([false, false, false]);
-    onUpdateGuardrailConfig({
-      lockoutUntilIso: end.toISOString(),
-      lockoutReason: 'Locked for remainder of trading day — discipline preserved.',
-    });
-  };
-
-  const clearLockout = () => {
-    onUpdateGuardrailConfig({ lockoutUntilIso: null, lockoutReason: null });
-    setResetSteps([false, false, false]);
-  };
 
   const handleToggleCheck = (id: string) => {
     onUpdateChecklist(
@@ -215,49 +173,38 @@ export const GuardTab: React.FC<GuardTabProps> = ({
   };
 
   // Overall Execution Clearance status
-  const statusBanner = discipline.isLockedOut
-    ? {
-        title: 'SESSION LOCKED / COOLDOWN ACTIVE',
-        subtitle: `${discipline.lockoutReason ?? 'Active behavioral lockout'} · Remaining: ${
-          discipline.lockoutRemainingText
-        }`,
-        color: 'var(--negative)',
-        bg: 'var(--negative-soft)',
-        Icon: Lock,
-      }
-    : activeNewsAlert?.level === 'restricted'
-    ? {
-        title: `RED-FOLDER NEWS RESTRICTION (±${guardrailConfig.newsBufferMinutes}M)`,
-        subtitle: `${activeNewsAlert.event.event.currency} ${activeNewsAlert.event.event.title} · ${activeNewsAlert.event.countdownText}`,
-        color: 'var(--negative)',
-        bg: 'var(--negative-soft)',
-        Icon: ShieldAlert,
-      }
-    : activeNewsAlert?.level === 'imminent'
-    ? {
-        title: 'HIGH-IMPACT NEWS APPROACHING',
-        subtitle: `${activeNewsAlert.event.event.currency} ${activeNewsAlert.event.event.title} (${activeNewsAlert.event.istTimeLabel}) · ${activeNewsAlert.event.countdownText}`,
-        color: 'var(--warning)',
-        bg: 'var(--warning-soft)',
-        Icon: AlertTriangle,
-      }
-    : checklistReady
-    ? {
-        title: 'CLEARED TO EXECUTE',
-        subtitle: `All ${requiredItems.length} pre-trade CISD checklist items verified · Zero active lockouts or news conflicts.`,
-        color: 'var(--positive)',
-        bg: 'var(--positive-soft)',
-        Icon: ShieldCheck,
-      }
-    : {
-        title: 'PRE-TRADE CHECKLIST INCOMPLETE',
-        subtitle: `${checkedRequired} of ${requiredItems.length} mandatory CISD checks confirmed before entering the market.`,
-        color: 'var(--accent-text)',
-        bg: 'var(--accent-soft)',
-        Icon: CheckSquare,
-      };
-
-  const allResetChecked = resetSteps[0] && resetSteps[1] && resetSteps[2];
+  const statusBanner =
+    activeNewsAlert?.level === 'restricted'
+      ? {
+          title: `RED-FOLDER NEWS RESTRICTION (±${guardrailConfig.newsBufferMinutes}M)`,
+          subtitle: `${activeNewsAlert.event.event.currency} ${activeNewsAlert.event.event.title} · ${activeNewsAlert.event.countdownText}`,
+          color: 'var(--negative)',
+          bg: 'var(--negative-soft)',
+          Icon: ShieldAlert,
+        }
+      : activeNewsAlert?.level === 'imminent'
+      ? {
+          title: 'HIGH-IMPACT NEWS APPROACHING',
+          subtitle: `${activeNewsAlert.event.event.currency} ${activeNewsAlert.event.event.title} (${activeNewsAlert.event.istTimeLabel}) · ${activeNewsAlert.event.countdownText}`,
+          color: 'var(--warning)',
+          bg: 'var(--warning-soft)',
+          Icon: AlertTriangle,
+        }
+      : checklistReady
+      ? {
+          title: 'CLEARED TO EXECUTE',
+          subtitle: `All ${requiredItems.length} pre-trade CISD checklist items verified · Zero active news conflicts.`,
+          color: 'var(--positive)',
+          bg: 'var(--positive-soft)',
+          Icon: ShieldCheck,
+        }
+      : {
+          title: 'PRE-TRADE CHECKLIST INCOMPLETE',
+          subtitle: `${checkedRequired} of ${requiredItems.length} mandatory CISD checks confirmed before entering the market.`,
+          color: 'var(--accent-text)',
+          bg: 'var(--accent-soft)',
+          Icon: CheckSquare,
+        };
 
   return (
     <div className="space-y-6">
@@ -288,36 +235,57 @@ export const GuardTab: React.FC<GuardTabProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0 font-mono-num text-xs">
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3.5 py-2 text-center">
-            <span className="block text-[10px] text-[var(--text-muted)]">Today Trades</span>
+        <div className="flex items-center gap-3 shrink-0 text-xs">
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3.5 py-2 text-center font-mono-num">
+            <span className="block text-[10px] text-[var(--text-muted)]">CISD Checks</span>
             <span
               className="font-bold text-sm"
-              style={{
-                color: discipline.maxTradesReached ? 'var(--warning)' : 'var(--text-primary)',
-              }}
+              style={{ color: checklistReady ? 'var(--positive)' : 'var(--accent-text)' }}
             >
-              {discipline.todayTradesCount} / {guardrailConfig.maxTradesPerDay}
+              {checkedRequired} / {requiredItems.length}
             </span>
           </div>
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3.5 py-2 text-center">
-            <span className="block text-[10px] text-[var(--text-muted)]">Loss Streak</span>
-            <span
-              className="font-bold text-sm"
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3.5 py-2 flex items-center gap-2.5">
+            <div>
+              <span className="block text-[10px] text-[var(--text-muted)]">News Alerts</span>
+              <span className="font-semibold text-[var(--text-primary)]">
+                {guardrailConfig.enableNewsWarnings ? 'Active' : 'Muted'}
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={guardrailConfig.enableNewsWarnings}
+              onClick={() =>
+                onUpdateGuardrailConfig({
+                  enableNewsWarnings: !guardrailConfig.enableNewsWarnings,
+                })
+              }
+              className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer"
               style={{
-                color: discipline.tiltStreakReached ? 'var(--negative)' : 'var(--text-primary)',
+                backgroundColor: guardrailConfig.enableNewsWarnings
+                  ? 'var(--btn-primary-bg)'
+                  : 'var(--border-strong)',
               }}
             >
-              {discipline.consecutiveLossesToday} / {guardrailConfig.maxConsecutiveLosses}
-            </span>
+              <span
+                className="inline-block h-3.5 w-3.5 rounded-full transition-transform"
+                style={{
+                  transform: guardrailConfig.enableNewsWarnings
+                    ? 'translateX(19px)'
+                    : 'translateX(3px)',
+                  backgroundColor: guardrailConfig.enableNewsWarnings
+                    ? 'var(--btn-primary-text)'
+                    : '#ffffff',
+                }}
+              />
+            </button>
           </div>
         </div>
       </section>
 
-      {/* Main 2-Column Split: Pre-Trade Checklist + Session Lockout & Tilt Guard */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* Section 1: Pre-Trade CISD Checklist */}
-        <section className="tb-glass lg:col-span-7 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-5">
+      {/* Section 1: Pre-Trade CISD Checklist */}
+      <section className="tb-glass rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-5">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -466,214 +434,9 @@ export const GuardTab: React.FC<GuardTabProps> = ({
               Add Rule
             </button>
           </form>
-        </section>
+      </section>
 
-        {/* Section 2: Session Lockout & Tilt Cooldown Guard */}
-        <section className="tb-glass lg:col-span-5 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-5">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                  Session Lockout &amp; Tilt Guard
-                </h2>
-                <p className="text-xs text-[var(--text-muted)]">
-                  Stop revenge-trading spirals with automated cooldowns &amp; manual session locks.
-                </p>
-              </div>
-              <Flame
-                className="w-5 h-5 shrink-0"
-                style={{
-                  color: discipline.isLockedOut ? 'var(--negative)' : 'var(--accent-text)',
-                }}
-              />
-            </div>
-
-            {/* Active Lockout Box or Quick Lock Buttons */}
-            {discipline.isLockedOut ? (
-              <div className="rounded-xl border border-rose-500/45 bg-rose-500/12 p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-rose-400 inline-flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5" />
-                    LOCKED OUT
-                  </span>
-                  <span className="font-mono-num text-lg font-bold text-rose-300">
-                    {discipline.lockoutRemainingText}
-                  </span>
-                </div>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  {discipline.lockoutReason}
-                </p>
-
-                {/* 3-Step Behavioral Reset Protocol to Unlock Early */}
-                <div className="pt-2 border-t border-rose-500/25 space-y-1.5">
-                  <p className="text-[11px] font-semibold text-[var(--text-primary)]">
-                    Behavioral Reset Protocol (check all 3 to unlock early):
-                  </p>
-                  {[
-                    'I have stepped away from the charts and taken 5 slow breaths',
-                    'I accept my prior outcome and will not try to win it back',
-                    'My next trade will strictly follow my CISD playbook and risk cap',
-                  ].map((step, idx) => (
-                    <label
-                      key={step}
-                      className="flex items-start gap-2 text-[11px] text-[var(--text-secondary)] cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={resetSteps[idx]}
-                        onChange={(e) => {
-                          const next: [boolean, boolean, boolean] = [...resetSteps];
-                          next[idx] = e.target.checked;
-                          setResetSteps(next);
-                        }}
-                        className="mt-0.5 accent-blue-500"
-                      />
-                      <span>{step}</span>
-                    </label>
-                  ))}
-                  <button
-                    type="button"
-                    disabled={!allResetChecked}
-                    onClick={clearLockout}
-                    className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-600 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    <Unlock className="w-3.5 h-3.5" />
-                    Complete Reset &amp; Unlock Session
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-4 space-y-3">
-                <p className="text-xs font-semibold text-[var(--text-primary)]">
-                  Quick Manual Session Lockout
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { mins: 15, label: '15 min' },
-                    { mins: 30, label: '30 min' },
-                    { mins: 60, label: '1 hour' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.mins}
-                      type="button"
-                      onClick={() => startManualLockout(opt.mins, opt.label)}
-                      className="tb-btn-ghost rounded-xl py-2 text-xs font-semibold cursor-pointer"
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={lockUntilEndOfDay}
-                    className="rounded-xl border border-rose-500/35 bg-rose-500/10 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 cursor-pointer"
-                  >
-                    End of Day
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Tilt Guard Rule Configuration */}
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-4 space-y-3.5">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold text-[var(--text-primary)]">
-                    Automated Tilt Cooldown Guard
-                  </p>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Auto-locks Journal after consecutive losses, cap hit, or Revenge/Anxious loss.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={guardrailConfig.enableTiltGuard}
-                  onClick={() =>
-                    onUpdateGuardrailConfig({
-                      enableTiltGuard: !guardrailConfig.enableTiltGuard,
-                    })
-                  }
-                  className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer"
-                  style={{
-                    backgroundColor: guardrailConfig.enableTiltGuard
-                      ? 'var(--btn-primary-bg)'
-                      : 'var(--border-strong)',
-                  }}
-                >
-                  <span
-                    className="inline-block h-4 w-4 rounded-full transition-transform"
-                    style={{
-                      transform: guardrailConfig.enableTiltGuard
-                        ? 'translateX(24px)'
-                        : 'translateX(4px)',
-                      backgroundColor: guardrailConfig.enableTiltGuard
-                        ? 'var(--btn-primary-text)'
-                        : '#ffffff',
-                    }}
-                  />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-[11px] text-[var(--text-muted)] mb-1">
-                    Max Trades/Day
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={guardrailConfig.maxTradesPerDay}
-                    onChange={(e) =>
-                      onUpdateGuardrailConfig({
-                        maxTradesPerDay: Math.max(1, Number(e.target.value) || 3),
-                      })
-                    }
-                    className="tb-input font-mono-num w-full rounded-lg px-2.5 py-2 text-xs font-semibold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-[var(--text-muted)] mb-1">
-                    Max Loss Streak
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={guardrailConfig.maxConsecutiveLosses}
-                    onChange={(e) =>
-                      onUpdateGuardrailConfig({
-                        maxConsecutiveLosses: Math.max(1, Number(e.target.value) || 2),
-                      })
-                    }
-                    className="tb-input font-mono-num w-full rounded-lg px-2.5 py-2 text-xs font-semibold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-[var(--text-muted)] mb-1">
-                    Cooldown (min)
-                  </label>
-                  <input
-                    type="number"
-                    min="5"
-                    max="120"
-                    step="5"
-                    value={guardrailConfig.cooldownMinutes}
-                    onChange={(e) =>
-                      onUpdateGuardrailConfig({
-                        cooldownMinutes: Math.max(5, Number(e.target.value) || 15),
-                      })
-                    }
-                    className="tb-input font-mono-num w-full rounded-lg px-2.5 py-2 text-xs font-semibold"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* Section 3: Economic News Event Tracker & Prop Restriction Warnings */}
+      {/* Section 2: Economic News Event Tracker & Prop Restriction Warnings */}
       <section className="tb-glass rounded-2xl p-5 sm:p-6 space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-4 border-b border-[var(--border-subtle)]">
           <div className="flex items-start gap-2.5">

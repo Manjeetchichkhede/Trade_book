@@ -17,7 +17,6 @@ import {
   Briefcase,
   Calculator,
   Clock,
-  Lock,
   Plus,
   ShieldAlert,
   ShieldCheck,
@@ -37,11 +36,7 @@ import {
   computePortfolioKpis,
 } from '../utils/calculations';
 import { formatMoney, formatPct, formatR, USD_TO_INR } from '../utils/format';
-import {
-  computeDailyDiscipline,
-  evaluateNewsEvents,
-  getActiveNewsAlert,
-} from '../utils/guardrails';
+import { evaluateNewsEvents, getActiveNewsAlert } from '../utils/guardrails';
 import { getActiveSessionHeadline, getIstAndNyClocks } from '../utils/sessions';
 
 interface OverviewTabProps {
@@ -100,11 +95,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     guardrailConfig.enableNewsWarnings,
     guardrailConfig.newsBufferMinutes,
   ]);
-
-  const discipline = useMemo(
-    () => computeDailyDiscipline(trades, guardrailConfig, now),
-    [trades, guardrailConfig, now]
-  );
 
   const chartSeries = useMemo(() => {
     const mult = settings.currency === 'INR' ? USD_TO_INR : 1;
@@ -166,37 +156,25 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               </p>
             </div>
 
-            {/* Live Lockout or High-Impact News Alert Strip */}
-            {(discipline.isLockedOut || activeNewsAlert) && (
+            {/* Live High-Impact News Alert Strip */}
+            {activeNewsAlert && (
               <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                {discipline.isLockedOut && (
-                  <button
-                    type="button"
-                    onClick={() => onNavigateTab('guard')}
-                    className="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/12 px-3 py-1.5 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
-                  >
-                    <Lock className="w-3.5 h-3.5 shrink-0" />
-                    <span>Session Locked ({discipline.lockoutRemainingText})</span>
-                  </button>
-                )}
-                {activeNewsAlert && (
-                  <button
-                    type="button"
-                    onClick={() => onNavigateTab('guard')}
-                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
-                      activeNewsAlert.level === 'restricted'
-                        ? 'border-rose-500/45 bg-rose-500/15 text-rose-400 hover:bg-rose-500/25'
-                        : 'border-amber-500/40 bg-amber-500/12 text-amber-400 hover:bg-amber-500/20'
-                    }`}
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                    <span>
-                      {activeNewsAlert.level === 'restricted' ? 'News Window:' : 'News Soon:'}{' '}
-                      {activeNewsAlert.event.event.currency} {activeNewsAlert.event.event.title} (
-                      {activeNewsAlert.event.countdownText})
-                    </span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('guard')}
+                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+                    activeNewsAlert.level === 'restricted'
+                      ? 'border-rose-500/45 bg-rose-500/15 text-rose-400 hover:bg-rose-500/25'
+                      : 'border-amber-500/40 bg-amber-500/12 text-amber-400 hover:bg-amber-500/20'
+                  }`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {activeNewsAlert.level === 'restricted' ? 'News Window:' : 'News Soon:'}{' '}
+                    {activeNewsAlert.event.event.currency} {activeNewsAlert.event.event.title} (
+                    {activeNewsAlert.event.countdownText})
+                  </span>
+                </button>
               </div>
             )}
 
