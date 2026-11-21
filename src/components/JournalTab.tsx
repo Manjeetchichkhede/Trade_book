@@ -8,35 +8,53 @@ import {
   Download,
   ImagePlus,
   List,
+  Lock,
+  Pencil,
   Plus,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import {
   AppSettings,
+  EconomicNewsEvent,
+  GuardrailConfig,
   MENTAL_STATES,
   MentalState,
   PLAYBOOK_SETUPS,
   PlaybookSetup,
   PropAccount,
+  TabId,
   Trade,
   TradeSide,
 } from '../types';
 import { compressImageFile, saveImage } from '../db/storage';
 import { computeDrawdownImpact } from '../utils/calculations';
+import {
+  computeDailyDiscipline,
+  evaluateNewsEvents,
+  getActiveNewsAlert,
+} from '../utils/guardrails';
 import { formatMoney, formatR, formatShortDate, generateId, getTodayISO } from '../utils/format';
 import { ChartLightboxModal } from './ChartLightboxModal';
+import { ChartAnnotatorModal } from './ChartAnnotatorModal';
+import { CsvImportModal } from './CsvImportModal';
 
 interface JournalTabProps {
   accounts: PropAccount[];
   trades: Trade[];
   settings: AppSettings;
+  newsEvents: EconomicNewsEvent[];
+  guardrailConfig: GuardrailConfig;
   preselectedAccountId?: string | null;
   onClearPreselectedAccount: () => void;
   onAddTrade: (trade: Trade) => void;
+  onBulkImportTrades: (imported: Trade[]) => void;
   onDeleteTrade: (tradeId: string) => void;
+  onNavigateTab: (tab: TabId) => void;
 }
 
 const SYMBOL_CHIPS = ['XAUUSD', 'NAS100', 'EURUSD', 'GBPUSD', 'US30', 'NQ', 'USDJPY', 'GBPJPY'];
@@ -47,12 +65,45 @@ export const JournalTab: React.FC<JournalTabProps> = ({
   accounts,
   trades,
   settings,
+  newsEvents,
+  guardrailConfig,
   preselectedAccountId,
   onClearPreselectedAccount,
   onAddTrade,
+  onBulkImportTrades,
   onDeleteTrade,
+  onNavigateTab,
 }) => {
   const loggerRef = useRef<HTMLDivElement | null>(null);
+
+  // Live clock tick for guardrail & news restriction countdowns
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const discipline = useMemo(
+    () => computeDailyDiscipline(trades, guardrailConfig, now),
+    [trades, guardrailConfig, now]
+  );
+
+  const activeNewsAlert = useMemo(() => {
+    if (!guardrailConfig.enableNewsWarnings) return null;
+    const evaluated = evaluateNewsEvents(
+      newsEvents,
+      now,
+      settings.dstMode,
+      guardrailConfig.newsBufferMinutes
+    );
+    return getActiveNewsAlert(evaluated);
+  }, [
+    newsEvents,
+    now,
+    settings.dstMode,
+    guardrailConfig.enableNewsWarnings,
+    guardrailConfig.newsBufferMinutes,
+  ]);
 
   // Quick Trade Logger form state
   const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? '');
@@ -67,8 +118,11 @@ export const JournalTab: React.FC<JournalTabProps> = ({
   const [note, setNote] = useState<string>('');
   const [beforePreview, setBeforePreview] = useState<string | null>(null);
   const [afterPreview, setAfterPreview] = useState<string | null>(null);
+  const [annotatingPreview, setAnnotatingPreview] = useState<'before' | 'after' | null>(null);
   const [guardrailOverride, setGuardrailOverride] = useState<boolean>(false);
+  const [lockoutOverride, setLockoutOverride] = useState<boolean>(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [csvImportOpen, setCsvImportOpen] = useState<boolean>(false);
 
   // Calendar / List View state
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
@@ -131,6 +185,10 @@ export const JournalTab: React.FC<JournalTabProps> = ({
     e.preventDefault();
     if (!accountId) return;
 
+    if (discipline.isLockedOut && !lockoutOverride) {
+      return;
+    }
+
     if (settings.breachGuardrail && drawdownPreview?.anyBreach && !guardrailOverride) {
       setGuardrailOverride(true);
       return;
@@ -170,6 +228,7 @@ export const JournalTab: React.FC<JournalTabProps> = ({
     setBeforePreview(null);
     setAfterPreview(null);
     setGuardrailOverride(false);
+    setLockoutOverride(false);
     setSelectedCalDate(date);
     setSaveFeedback(`Logged ${newTrade.symbol} ${newTrade.side} (${formatR(newTrade.rMultiple)})`);
     window.setTimeout(() => setSaveFeedback(null), 3000);
@@ -296,6 +355,84 @@ export const JournalTab: React.FC<JournalTabProps> = ({
             </span>
           )}
         </div>
+
+        {/* Active Session Lockout / High-Impact News Guardrail Banners */}
+        {(discipline.isLockedOut || activeNewsAlert) && (
+          <div className="mt-4 space-y-2.5">
+            {discipline.isLockedOut && (
+              <div className="rounded-xl border border-rose-500/45 bg-rose-500/12 p-3.5 space-y-2.5">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5">
+                    <Lock className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-rose-400">
+                        Session Locked Out — {discipline.lockoutRemainingText} remaining
+                      </p>
+                      <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                        {discipline.lockoutReason ||
+                          'Cooldown active to protect prop capital from tilt or overtrading.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab('guard')}
+                    className="tb-btn-ghost inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold cursor-pointer whitespace-nowrap"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Open Guard
+                  </button>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={lockoutOverride}
+                    onChange={(e) => setLockoutOverride(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded accent-rose-500 cursor-pointer"
+                  />
+                  <span>
+                    I acknowledge the active cooldown and intentionally override to log a historical
+                    or approved trade.
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {activeNewsAlert && (
+              <div
+                className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${
+                  activeNewsAlert.level === 'restricted'
+                    ? 'border-rose-500/45 bg-rose-500/12'
+                    : 'border-amber-500/40 bg-amber-500/12'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-xs">
+                  <AlertTriangle
+                    className={`w-4 h-4 shrink-0 ${
+                      activeNewsAlert.level === 'restricted' ? 'text-rose-400' : 'text-amber-400'
+                    }`}
+                  />
+                  <span className="text-[var(--text-primary)]">
+                    <strong>
+                      {activeNewsAlert.level === 'restricted'
+                        ? 'Prop News Restriction Active:'
+                        : 'High-Impact News Approaching:'}
+                    </strong>{' '}
+                    {activeNewsAlert.event.event.currency} {activeNewsAlert.event.event.title} (
+                    {activeNewsAlert.event.istTimeLabel} · {activeNewsAlert.event.countdownText})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('guard')}
+                  className="text-xs font-semibold text-[var(--accent-text)] hover:underline cursor-pointer whitespace-nowrap"
+                >
+                  View Calendar →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleLogTrade} className="mt-5 space-y-5">
           {/* Row 1: Account, Date, Symbol, Side */}
@@ -565,15 +702,24 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                       {label}
                     </span>
                     {preview && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          slot === 'before' ? setBeforePreview(null) : setAfterPreview(null)
-                        }
-                        className="inline-flex items-center gap-1 text-[11px] text-rose-400 hover:underline cursor-pointer"
-                      >
-                        <X className="w-3 h-3" /> Clear
-                      </button>
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setAnnotatingPreview(slot)}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
+                        >
+                          <Pencil className="w-3 h-3" /> Annotate
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            slot === 'before' ? setBeforePreview(null) : setAfterPreview(null)
+                          }
+                          className="inline-flex items-center gap-1 text-[11px] text-rose-400 hover:underline cursor-pointer"
+                        >
+                          <X className="w-3 h-3" /> Clear
+                        </button>
+                      </div>
                     )}
                   </div>
                   {preview ? (
@@ -684,9 +830,15 @@ export const JournalTab: React.FC<JournalTabProps> = ({
 
               <button
                 type="submit"
-                className="tb-btn-primary mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold cursor-pointer"
+                disabled={discipline.isLockedOut && !lockoutOverride}
+                className="tb-btn-primary mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
               >
-                {guardrailOverride ? (
+                {discipline.isLockedOut && !lockoutOverride ? (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    Session Locked — Override Above to Log
+                  </>
+                ) : guardrailOverride ? (
                   <>
                     <AlertTriangle className="w-4 h-4" />
                     Confirm &amp; Log Breaching Trade
@@ -733,14 +885,24 @@ export const JournalTab: React.FC<JournalTabProps> = ({
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="tb-btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium cursor-pointer whitespace-nowrap"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCsvImportOpen(true)}
+              className="tb-btn-primary inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold cursor-pointer whitespace-nowrap"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Import CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="tb-btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium cursor-pointer whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </button>
+          </div>
         </div>
 
         {viewMode === 'calendar' ? (
@@ -1136,6 +1298,35 @@ export const JournalTab: React.FC<JournalTabProps> = ({
         account={lightboxTrade ? accountLookup.get(lightboxTrade.accountId) : undefined}
         settings={settings}
         onClose={() => setLightboxTrade(null)}
+      />
+
+      <ChartAnnotatorModal
+        open={Boolean(annotatingPreview)}
+        title={
+          annotatingPreview === 'before'
+            ? 'Annotate Before Chart Preview'
+            : 'Annotate After Chart Preview'
+        }
+        imageUrl={annotatingPreview === 'before' ? beforePreview : afterPreview}
+        onSave={(annotatedUrl) => {
+          if (annotatingPreview === 'before') setBeforePreview(annotatedUrl);
+          else if (annotatingPreview === 'after') setAfterPreview(annotatedUrl);
+          setAnnotatingPreview(null);
+        }}
+        onClose={() => setAnnotatingPreview(null)}
+      />
+
+      <CsvImportModal
+        open={csvImportOpen}
+        accounts={accounts}
+        existingTrades={trades}
+        settings={settings}
+        onImportTrades={(imported) => {
+          onBulkImportTrades(imported);
+          setSaveFeedback(`Imported ${imported.length} broker trades into your journal.`);
+          window.setTimeout(() => setSaveFeedback(null), 4000);
+        }}
+        onClose={() => setCsvImportOpen(false)}
       />
     </div>
   );

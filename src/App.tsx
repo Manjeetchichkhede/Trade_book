@@ -3,6 +3,9 @@ import { WifiOff } from 'lucide-react';
 import {
   AppSettings,
   BackupPayload,
+  ChecklistItem,
+  EconomicNewsEvent,
+  GuardrailConfig,
   PropAccount,
   RoiEntry,
   TabId,
@@ -16,15 +19,24 @@ import {
   kvSet,
   saveImage,
 } from './db/storage';
-import { createDemoSeed, DEFAULT_SETTINGS } from './data/demoData';
+import {
+  createDefaultChecklist,
+  createDefaultGuardrailConfig,
+  createDefaultNewsEvents,
+  createDemoSeed,
+  DEFAULT_SETTINGS,
+} from './data/demoData';
 import { getTodayISO } from './utils/format';
+import { evaluatePostTradeTiltTrigger } from './utils/guardrails';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Navbar } from './components/Navbar';
 import { OverviewTab } from './components/OverviewTab';
+import { AccountsTab } from './components/AccountsTab';
 import { JournalTab } from './components/JournalTab';
 import { LotSizeTab } from './components/LotSizeTab';
 import { SessionsTab } from './components/SessionsTab';
 import { RoiTab } from './components/RoiTab';
+import { GuardTab } from './components/GuardTab';
 import { SettingsModal } from './components/SettingsModal';
 import { StartupNameModal } from './components/StartupNameModal';
 import { CursorBackground } from './components/CursorBackground';
@@ -45,6 +57,11 @@ export default function App() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [roiEntries, setRoiEntries] = useState<RoiEntry[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(() => createDefaultChecklist());
+  const [newsEvents, setNewsEvents] = useState<EconomicNewsEvent[]>(() => createDefaultNewsEvents());
+  const [guardrailConfig, setGuardrailConfig] = useState<GuardrailConfig>(() =>
+    createDefaultGuardrailConfig()
+  );
 
   const [preselectedJournalAcc, setPreselectedJournalAcc] = useState<string | null>(null);
   const [preselectedPayoutAcc, setPreselectedPayoutAcc] = useState<string | null>(null);
@@ -55,15 +72,32 @@ export default function App() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const [savedSeeded, savedAccounts, savedTrades, savedRoi, savedSettings] = await Promise.all([
+      const [
+        savedSeeded,
+        savedAccounts,
+        savedTrades,
+        savedRoi,
+        savedSettings,
+        savedChecklist,
+        savedNews,
+        savedGuardrail,
+      ] = await Promise.all([
         kvGet<boolean>('seeded_v2'),
         kvGet<PropAccount[]>('accounts'),
         kvGet<Trade[]>('trades'),
         kvGet<RoiEntry[]>('roiEntries'),
         kvGet<AppSettings>('settings'),
+        kvGet<ChecklistItem[]>('checklist'),
+        kvGet<EconomicNewsEvent[]>('newsEvents'),
+        kvGet<GuardrailConfig>('guardrailConfig'),
       ]);
 
       if (!active) return;
+
+      const today = getTodayISO();
+      const defaultChecklist = createDefaultChecklist();
+      const defaultNews = createDefaultNewsEvents();
+      const defaultGuardrail = createDefaultGuardrailConfig();
 
       if (!savedSeeded || !savedAccounts) {
         const demo = createDemoSeed();
@@ -71,6 +105,9 @@ export default function App() {
         setTrades(demo.trades);
         setRoiEntries(demo.roiEntries);
         setSettings(DEFAULT_SETTINGS);
+        setChecklist(defaultChecklist);
+        setNewsEvents(defaultNews);
+        setGuardrailConfig(defaultGuardrail);
 
         await Promise.all([
           kvSet('seeded_v2', true),
@@ -78,6 +115,9 @@ export default function App() {
           kvSet('trades', demo.trades),
           kvSet('roiEntries', demo.roiEntries),
           kvSet('settings', DEFAULT_SETTINGS),
+          kvSet('checklist', defaultChecklist),
+          kvSet('newsEvents', defaultNews),
+          kvSet('guardrailConfig', defaultGuardrail),
           ...Object.entries(demo.images).map(([id, dataUrl]) => saveImage(id, dataUrl)),
         ]);
       } else {
@@ -85,6 +125,28 @@ export default function App() {
         setTrades(savedTrades ?? []);
         setRoiEntries(savedRoi ?? []);
         setSettings({ ...DEFAULT_SETTINGS, ...(savedSettings ?? {}) });
+
+        const mergedGuardrail: GuardrailConfig = {
+          ...defaultGuardrail,
+          ...(savedGuardrail ?? {}),
+        };
+        const rawChecklist =
+          Array.isArray(savedChecklist) && savedChecklist.length > 0
+            ? savedChecklist
+            : defaultChecklist;
+
+        // Auto-reset daily pre-trade checklist checks on a new calendar date
+        if (mergedGuardrail.checklistDate !== today) {
+          setChecklist(rawChecklist.map((item) => ({ ...item, checked: false })));
+          setGuardrailConfig({ ...mergedGuardrail, checklistDate: today });
+        } else {
+          setChecklist(rawChecklist);
+          setGuardrailConfig(mergedGuardrail);
+        }
+
+        setNewsEvents(
+          Array.isArray(savedNews) && savedNews.length > 0 ? savedNews : defaultNews
+        );
       }
       if (active) setHydrated(true);
     })();
@@ -93,7 +155,7 @@ export default function App() {
     };
   }, []);
 
-  // Sync theme, font, glass & gradient attributes on <html>
+  // Sync theme, font, custom fontColor, glass & gradient attributes on <html>
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-theme', settings.theme);
@@ -101,6 +163,12 @@ export default function App() {
     root.setAttribute('data-glass-page', String(settings.glassPage));
     root.setAttribute('data-glass-nav', String(settings.glassNav));
     root.setAttribute('data-bg-gradient', String(settings.bgGradient));
+
+    if (settings.fontColor && settings.fontColor.trim()) {
+      root.style.setProperty('--text-primary', settings.fontColor.trim());
+    } else {
+      root.style.removeProperty('--text-primary');
+    }
 
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
@@ -129,6 +197,21 @@ export default function App() {
     kvSet('settings', settings);
   }, [settings, hydrated]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    kvSet('checklist', checklist);
+  }, [checklist, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    kvSet('newsEvents', newsEvents);
+  }, [newsEvents, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    kvSet('guardrailConfig', guardrailConfig);
+  }, [guardrailConfig, hydrated]);
+
   const handleUpdateSettings = useCallback((patch: Partial<AppSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
   }, []);
@@ -145,8 +228,33 @@ export default function App() {
     setAccounts((prev) => prev.filter((a) => a.id !== accountId));
   }, []);
 
-  const handleAddTrade = useCallback((trade: Trade) => {
-    setTrades((prev) => [trade, ...prev]);
+  const handleUpdateGuardrailConfig = useCallback((patch: Partial<GuardrailConfig>) => {
+    setGuardrailConfig((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const handleAddTrade = useCallback(
+    (trade: Trade) => {
+      setTrades((prev) => {
+        const tilt = evaluatePostTradeTiltTrigger(trade, prev, guardrailConfig);
+        if (tilt.triggered) {
+          const untilIso = new Date(
+            Date.now() + guardrailConfig.cooldownMinutes * 60_000
+          ).toISOString();
+          setGuardrailConfig((cfg) => ({
+            ...cfg,
+            lockoutUntilIso: untilIso,
+            lockoutReason: tilt.reason,
+          }));
+        }
+        return [trade, ...prev];
+      });
+    },
+    [guardrailConfig]
+  );
+
+  const handleBulkImportTrades = useCallback((imported: Trade[]) => {
+    if (imported.length === 0) return;
+    setTrades((prev) => [...imported, ...prev]);
   }, []);
 
   const handleDeleteTrade = useCallback((tradeId: string) => {
@@ -179,15 +287,18 @@ export default function App() {
   const handleBuildBackupPayload = useCallback(async (): Promise<BackupPayload> => {
     const images = await getAllImages();
     return {
-      version: '2.4.0',
+      version: '2.5.0',
       exportedAt: new Date().toISOString(),
       accounts,
       trades,
       roiEntries,
       settings,
       images,
+      checklist,
+      newsEvents,
+      guardrailConfig,
     };
-  }, [accounts, trades, roiEntries, settings]);
+  }, [accounts, trades, roiEntries, settings, checklist, newsEvents, guardrailConfig]);
 
   const handleApplyBackupPayload = useCallback(
     async (parsed: Partial<BackupPayload>): Promise<{ ok: boolean; message: string }> => {
@@ -209,6 +320,15 @@ export default function App() {
           ...parsed.settings,
           traderName: parsed.settings?.traderName || prev.traderName,
         }));
+      }
+      if (Array.isArray(parsed.checklist) && parsed.checklist.length > 0) {
+        setChecklist(parsed.checklist);
+      }
+      if (Array.isArray(parsed.newsEvents) && parsed.newsEvents.length > 0) {
+        setNewsEvents(parsed.newsEvents);
+      }
+      if (parsed.guardrailConfig) {
+        setGuardrailConfig({ ...createDefaultGuardrailConfig(), ...parsed.guardrailConfig });
       }
       return {
         ok: true,
@@ -245,17 +365,26 @@ export default function App() {
   const handleResetDemoData = useCallback(async () => {
     await clearAllImages();
     const demo = createDemoSeed();
+    const freshChecklist = createDefaultChecklist();
+    const freshNews = createDefaultNewsEvents();
+    const freshGuardrail = createDefaultGuardrailConfig();
     await Promise.all(
       Object.entries(demo.images).map(([id, dataUrl]) => saveImage(id, dataUrl))
     );
     setAccounts(demo.accounts);
     setTrades(demo.trades);
     setRoiEntries(demo.roiEntries);
+    setChecklist(freshChecklist);
+    setNewsEvents(freshNews);
+    setGuardrailConfig(freshGuardrail);
     await Promise.all([
       kvSet('seeded_v2', true),
       kvSet('accounts', demo.accounts),
       kvSet('trades', demo.trades),
       kvSet('roiEntries', demo.roiEntries),
+      kvSet('checklist', freshChecklist),
+      kvSet('newsEvents', freshNews),
+      kvSet('guardrailConfig', freshGuardrail),
     ]);
   }, []);
 
@@ -294,9 +423,19 @@ export default function App() {
                   trades={trades}
                   roiEntries={roiEntries}
                   settings={settings}
+                  newsEvents={newsEvents}
+                  guardrailConfig={guardrailConfig}
+                  onNavigateTab={setActiveTab}
+                />
+              )}
+
+              {activeTab === 'accounts' && (
+                <AccountsTab
+                  accounts={accounts}
+                  trades={trades}
+                  settings={settings}
                   onSaveAccount={handleSaveAccount}
                   onDeleteAccount={handleDeleteAccount}
-                  onNavigateTab={setActiveTab}
                   onQuickLogForAccount={handleQuickLogForAccount}
                   onQuickPayoutForAccount={handleQuickPayoutForAccount}
                 />
@@ -307,10 +446,14 @@ export default function App() {
                   accounts={accounts}
                   trades={trades}
                   settings={settings}
+                  newsEvents={newsEvents}
+                  guardrailConfig={guardrailConfig}
                   preselectedAccountId={preselectedJournalAcc}
                   onClearPreselectedAccount={() => setPreselectedJournalAcc(null)}
                   onAddTrade={handleAddTrade}
+                  onBulkImportTrades={handleBulkImportTrades}
                   onDeleteTrade={handleDeleteTrade}
+                  onNavigateTab={setActiveTab}
                 />
               )}
 
@@ -331,6 +474,19 @@ export default function App() {
                   onClearPreselectedPayout={() => setPreselectedPayoutAcc(null)}
                   onAddRoiEntry={handleAddRoiEntry}
                   onDeleteRoiEntry={handleDeleteRoiEntry}
+                />
+              )}
+
+              {activeTab === 'guard' && (
+                <GuardTab
+                  trades={trades}
+                  settings={settings}
+                  checklist={checklist}
+                  newsEvents={newsEvents}
+                  guardrailConfig={guardrailConfig}
+                  onUpdateChecklist={setChecklist}
+                  onUpdateNewsEvents={setNewsEvents}
+                  onUpdateGuardrailConfig={handleUpdateGuardrailConfig}
                 />
               )}
             </>

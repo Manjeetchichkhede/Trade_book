@@ -47,6 +47,17 @@ const FONTS: { id: FontId; label: string; sample: string }[] = [
   { id: 'mono', label: 'Terminal Mono', sample: '01:45:20 · +2.5R' },
 ];
 
+const FONT_COLOR_PRESETS: { label: string; hex: string }[] = [
+  { label: 'Crisp White', hex: '#f8fafc' },
+  { label: 'Ice Sky', hex: '#e0f2fe' },
+  { label: 'Mint', hex: '#d1fae5' },
+  { label: 'Warm Gold', hex: '#fef3c7' },
+  { label: 'Silver', hex: '#e4e4e7' },
+  { label: 'Soft Slate', hex: '#cbd5e1' },
+  { label: 'Obsidian Ink', hex: '#0f172a' },
+  { label: 'Pure Black', hex: '#000000' },
+];
+
 const CLOCK_STYLES: { id: ClockStyleId; label: string }[] = [
   { id: 'roman', label: 'Roman Classic' },
   { id: 'modern', label: 'Modern Minimal' },
@@ -264,6 +275,93 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               );
             })}
+          </div>
+        </section>
+
+        {/* Font Color */}
+        <section>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Font Color</h3>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Customize primary text color across all tabs while preserving button contrast.
+              </p>
+            </div>
+            {settings.fontColor && (
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ fontColor: '' })}
+                className="text-xs font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
+              >
+                Reset to Theme Default
+              </button>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-3.5 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ fontColor: '' })}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer"
+                style={{
+                  backgroundColor: !settings.fontColor ? 'var(--accent-soft)' : 'var(--bg-elevated)',
+                  border: !settings.fontColor
+                    ? '1px solid var(--accent)'
+                    : '1px solid var(--border-subtle)',
+                  color: !settings.fontColor ? 'var(--accent-text)' : 'var(--text-secondary)',
+                }}
+              >
+                {!settings.fontColor && <Check className="w-3 h-3" />}
+                Theme Default
+              </button>
+
+              {FONT_COLOR_PRESETS.map((preset) => {
+                const active = settings.fontColor.toLowerCase() === preset.hex.toLowerCase();
+                return (
+                  <button
+                    key={preset.hex}
+                    type="button"
+                    title={`${preset.label} (${preset.hex})`}
+                    onClick={() => onUpdateSettings({ fontColor: preset.hex })}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer"
+                    style={{
+                      backgroundColor: active ? 'var(--accent-soft)' : 'var(--bg-elevated)',
+                      border: active
+                        ? '1px solid var(--accent)'
+                        : '1px solid var(--border-subtle)',
+                      color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    <span
+                      className="h-3.5 w-3.5 rounded-full border border-white/30 shrink-0"
+                      style={{ backgroundColor: preset.hex }}
+                    />
+                    <span className="hidden sm:inline">{preset.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border-subtle)]">
+              <label className="inline-flex items-center gap-2.5 text-xs text-[var(--text-secondary)] cursor-pointer">
+                <span>Custom Color:</span>
+                <input
+                  type="color"
+                  aria-label="Pick custom font color"
+                  value={settings.fontColor || '#f8fafc'}
+                  onChange={(e) => onUpdateSettings({ fontColor: e.target.value })}
+                  className="h-7 w-10 rounded-lg border border-[var(--border-strong)] bg-transparent cursor-pointer"
+                />
+                <span className="font-mono-num text-xs font-semibold text-[var(--text-primary)]">
+                  {settings.fontColor ? settings.fontColor.toUpperCase() : 'Theme Default'}
+                </span>
+              </label>
+
+              <span className="text-xs font-semibold text-[var(--text-primary)]">
+                Preview: XAUUSD +2.5R · $1,250
+              </span>
+            </div>
           </div>
         </section>
 

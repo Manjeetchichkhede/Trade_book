@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Maximize2, Minimize2, X } from 'lucide-react';
+import { Maximize2, Minimize2, Pencil, X } from 'lucide-react';
 import { AppSettings, PropAccount, Trade } from '../types';
-import { getImage } from '../db/storage';
+import { getImage, saveImage } from '../db/storage';
 import { formatMoney, formatR, formatShortDate } from '../utils/format';
+import { ChartAnnotatorModal } from './ChartAnnotatorModal';
 
 interface ChartLightboxModalProps {
   trade: Trade | null;
   account?: PropAccount;
   settings: AppSettings;
+  onImageUpdated?: (imageId: string, newDataUrl: string) => void;
   onClose: () => void;
 }
 
@@ -15,12 +17,14 @@ export const ChartLightboxModal: React.FC<ChartLightboxModalProps> = ({
   trade,
   account,
   settings,
+  onImageUpdated,
   onClose,
 }) => {
   const [beforeUrl, setBeforeUrl] = useState<string | null>(null);
   const [afterUrl, setAfterUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [zoomed, setZoomed] = useState<'before' | 'after' | null>(null);
+  const [annotatingSlot, setAnnotatingSlot] = useState<'before' | 'after' | null>(null);
 
   useEffect(() => {
     if (!trade) return;
@@ -42,6 +46,19 @@ export const ChartLightboxModal: React.FC<ChartLightboxModalProps> = ({
   }, [trade]);
 
   if (!trade) return null;
+
+  const handleSaveAnnotation = async (annotatedDataUrl: string) => {
+    if (annotatingSlot === 'before' && trade.beforeChartId) {
+      await saveImage(trade.beforeChartId, annotatedDataUrl);
+      setBeforeUrl(annotatedDataUrl);
+      onImageUpdated?.(trade.beforeChartId, annotatedDataUrl);
+    } else if (annotatingSlot === 'after' && trade.afterChartId) {
+      await saveImage(trade.afterChartId, annotatedDataUrl);
+      setAfterUrl(annotatedDataUrl);
+      onImageUpdated?.(trade.afterChartId, annotatedDataUrl);
+    }
+    setAnnotatingSlot(null);
+  };
 
   return (
     <div
@@ -119,21 +136,30 @@ export const ChartLightboxModal: React.FC<ChartLightboxModalProps> = ({
                     Before Chart (Setup & Trigger)
                   </span>
                   {beforeUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setZoomed(zoomed === 'before' ? null : 'before')}
-                      className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                    >
-                      {zoomed === 'before' ? (
-                        <>
-                          <Minimize2 className="w-3.5 h-3.5" /> Side-by-Side
-                        </>
-                      ) : (
-                        <>
-                          <Maximize2 className="w-3.5 h-3.5" /> Expand
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAnnotatingSlot('before')}
+                        className="flex items-center gap-1 text-xs font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Annotate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setZoomed(zoomed === 'before' ? null : 'before')}
+                        className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                      >
+                        {zoomed === 'before' ? (
+                          <>
+                            <Minimize2 className="w-3.5 h-3.5" /> Side-by-Side
+                          </>
+                        ) : (
+                          <>
+                            <Maximize2 className="w-3.5 h-3.5" /> Expand
+                          </>
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
                 {beforeUrl ? (
@@ -157,21 +183,30 @@ export const ChartLightboxModal: React.FC<ChartLightboxModalProps> = ({
                     After Chart (Execution Outcome)
                   </span>
                   {afterUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setZoomed(zoomed === 'after' ? null : 'after')}
-                      className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                    >
-                      {zoomed === 'after' ? (
-                        <>
-                          <Minimize2 className="w-3.5 h-3.5" /> Side-by-Side
-                        </>
-                      ) : (
-                        <>
-                          <Maximize2 className="w-3.5 h-3.5" /> Expand
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAnnotatingSlot('after')}
+                        className="flex items-center gap-1 text-xs font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Annotate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setZoomed(zoomed === 'after' ? null : 'after')}
+                        className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                      >
+                        {zoomed === 'after' ? (
+                          <>
+                            <Minimize2 className="w-3.5 h-3.5" /> Side-by-Side
+                          </>
+                        ) : (
+                          <>
+                            <Maximize2 className="w-3.5 h-3.5" /> Expand
+                          </>
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
                 {afterUrl ? (
@@ -190,6 +225,18 @@ export const ChartLightboxModal: React.FC<ChartLightboxModalProps> = ({
           </div>
         )}
       </div>
+
+      <ChartAnnotatorModal
+        open={Boolean(annotatingSlot)}
+        title={
+          annotatingSlot === 'before'
+            ? `Annotate Before Chart — ${trade.symbol}`
+            : `Annotate After Chart — ${trade.symbol}`
+        }
+        imageUrl={annotatingSlot === 'before' ? beforeUrl : afterUrl}
+        onSave={handleSaveAnnotation}
+        onClose={() => setAnnotatingSlot(null)}
+      />
     </div>
   );
 };

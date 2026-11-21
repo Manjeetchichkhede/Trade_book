@@ -1,4 +1,11 @@
-export type TabId = 'overview' | 'journal' | 'lotsize' | 'sessions' | 'roi';
+export type TabId =
+  | 'overview'
+  | 'accounts'
+  | 'journal'
+  | 'lotsize'
+  | 'sessions'
+  | 'roi'
+  | 'guard';
 
 export type ThemeId = 'dark' | 'light' | 'monochrome' | 'bw';
 export type FontId = 'inter' | 'ubuntu' | 'ios' | 'comfortaa' | 'mono';
@@ -74,10 +81,47 @@ export interface RoiEntry {
   note: string;
 }
 
+export type ChecklistScope = 'All' | PlaybookSetup;
+
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  setupScope: ChecklistScope;
+  required: boolean;
+  checked: boolean;
+}
+
+export type NewsCurrency = 'USD' | 'EUR' | 'GBP' | 'JPY';
+export type NewsImpact = 'High' | 'Medium';
+
+export interface EconomicNewsEvent {
+  id: string;
+  date: string; // YYYY-MM-DD (NY market date)
+  nyTime: string; // HH:MM (24h NY local time)
+  currency: NewsCurrency;
+  impact: NewsImpact;
+  title: string;
+  forecast?: string;
+  previous?: string;
+}
+
+export interface GuardrailConfig {
+  maxTradesPerDay: number;
+  maxConsecutiveLosses: number;
+  cooldownMinutes: number;
+  newsBufferMinutes: 2 | 5 | 15;
+  enableTiltGuard: boolean;
+  enableNewsWarnings: boolean;
+  lockoutUntilIso: string | null;
+  lockoutReason: string | null;
+  checklistDate: string;
+}
+
 export interface AppSettings {
   traderName: string;
   theme: ThemeId;
   font: FontId;
+  fontColor: string; // '' = Theme Default, or '#rrggbb'
   clockStyle: ClockStyleId;
   currency: CurrencyId;
   dstMode: DstMode;
@@ -121,4 +165,7 @@ export interface BackupPayload {
   roiEntries: RoiEntry[];
   settings: AppSettings;
   images: Record<string, string>;
+  checklist?: ChecklistItem[];
+  newsEvents?: EconomicNewsEvent[];
+  guardrailConfig?: GuardrailConfig;
 }

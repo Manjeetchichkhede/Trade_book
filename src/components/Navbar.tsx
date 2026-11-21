@@ -1,11 +1,13 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   BookOpen,
+  Briefcase,
   Calculator,
   Clock,
   Download,
   LayoutDashboard,
   Settings,
+  ShieldCheck,
   TrendingUp,
   X,
 } from 'lucide-react';
@@ -22,10 +24,12 @@ interface NavbarProps {
 const NAV_ITEMS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] =
   [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'accounts', label: 'Accounts', icon: Briefcase },
     { id: 'journal', label: 'Journal', icon: BookOpen },
     { id: 'lotsize', label: 'Lot Size', icon: Calculator },
     { id: 'sessions', label: 'Sessions', icon: Clock },
     { id: 'roi', label: 'ROI', icon: TrendingUp },
+    { id: 'guard', label: 'Guard', icon: ShieldCheck },
   ];
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -39,6 +43,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   // Desktop sliding pill geometry
   const navContainerRef = useRef<HTMLDivElement | null>(null);
   const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const mobileScrollRef = useRef<HTMLDivElement | null>(null);
+  const mobileBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [pillStyle, setPillStyle] = useState<{ left: number; width: number; ready: boolean }>({
     left: 0,
     width: 0,
@@ -69,6 +75,14 @@ export const Navbar: React.FC<NavbarProps> = ({
       window.removeEventListener('resize', onResize);
       window.clearTimeout(t);
     };
+  }, [activeTab]);
+
+  // Keep active tab visible in swipeable mobile nav when changed programmatically
+  useEffect(() => {
+    const activeEl = mobileBtnRefs.current[activeTab];
+    if (activeEl) {
+      activeEl.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+    }
   }, [activeTab]);
 
   return (
@@ -123,12 +137,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }}
                     type="button"
                     onClick={() => onTabChange(id)}
-                    className="relative z-10 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer"
+                    className="relative z-10 flex items-center gap-1.5 rounded-full px-3 lg:px-3.5 py-2 text-xs lg:text-sm font-medium whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer"
                     style={{
                       color: isActive ? 'var(--nav-pill-text)' : 'var(--text-secondary)',
                     }}
                   >
-                    <Icon className="w-4 h-4 shrink-0" />
+                    <Icon className="w-3.5 h-3.5 lg:w-4 lg:h-4 shrink-0" />
                     <span>{label}</span>
                   </button>
                 );
@@ -171,31 +185,44 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </header>
 
-      {/* Mobile Floating Bottom Frosted-Glass Pill Navigation (< 768px) */}
+      {/* Mobile Floating Bottom Frosted-Glass Pill Navigation (< 768px) — 5 visible, swipe to reveal tabs 6–7 */}
       <nav
         aria-label="Mobile navigation"
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 px-3 pt-1"
         style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
       >
-        <div className="tb-glass-nav mx-auto max-w-md flex items-center justify-between rounded-full p-1.5">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
-            const isActive = activeTab === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onTabChange(id)}
-                className="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-2 px-1 text-[11px] font-medium transition-all duration-200 cursor-pointer whitespace-nowrap"
-                style={{
-                  backgroundColor: isActive ? 'var(--nav-pill)' : 'transparent',
-                  color: isActive ? 'var(--nav-pill-text)' : 'var(--text-secondary)',
-                }}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className="leading-none">{label}</span>
-              </button>
-            );
-          })}
+        <div className="tb-glass-nav mx-auto max-w-md rounded-full p-1.5 overflow-hidden">
+          <div
+            ref={mobileScrollRef}
+            onWheel={(e) => {
+              if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && mobileScrollRef.current) {
+                mobileScrollRef.current.scrollLeft += e.deltaY;
+              }
+            }}
+            className="tb-no-scrollbar flex items-center flex-nowrap overflow-x-auto overflow-y-hidden snap-x snap-mandatory scroll-smooth touch-pan-x rounded-full"
+          >
+            {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+              const isActive = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  ref={(el) => {
+                    mobileBtnRefs.current[id] = el;
+                  }}
+                  type="button"
+                  onClick={() => onTabChange(id)}
+                  className="w-1/5 shrink-0 snap-start flex flex-col items-center justify-center gap-0.5 rounded-full py-2 px-1 text-[11px] font-medium transition-all duration-200 cursor-pointer whitespace-nowrap"
+                  style={{
+                    backgroundColor: isActive ? 'var(--nav-pill)' : 'transparent',
+                    color: isActive ? 'var(--nav-pill-text)' : 'var(--text-secondary)',
+                  }}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="leading-none truncate max-w-full">{label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </nav>
 

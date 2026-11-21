@@ -302,6 +302,14 @@ html[data-glass-nav="false"] .tb-glass-nav {
   background: var(--text-muted);
 }
 
+.tb-no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.tb-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Range input styling */
 input[type="range"].tb-range {
   -webkit-appearance: none;

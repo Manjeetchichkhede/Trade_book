@@ -1,10 +1,19 @@
-import { AppSettings, PropAccount, RoiEntry, Trade } from '../types';
+import {
+  AppSettings,
+  ChecklistItem,
+  EconomicNewsEvent,
+  GuardrailConfig,
+  PropAccount,
+  RoiEntry,
+  Trade,
+} from '../types';
 import { addDaysISO, getTodayISO } from '../utils/format';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   traderName: '',
   theme: 'dark',
   font: 'inter',
+  fontColor: '',
   clockStyle: 'modern',
   currency: 'USD',
   dstMode: 'auto',
@@ -17,6 +26,159 @@ export const DEFAULT_SETTINGS: AppSettings = {
   compactAccounts: false,
   privacyMode: false,
 };
+
+export function createDefaultChecklist(): ChecklistItem[] {
+  return [
+    {
+      id: 'chk_1',
+      label: 'HTF Draw on Liquidity (PDH / PDL / Asian Range) clearly marked',
+      setupScope: 'All',
+      required: true,
+      checked: false,
+    },
+    {
+      id: 'chk_2',
+      label: 'Active inside Killzone or Silver Bullet execution window',
+      setupScope: 'All',
+      required: true,
+      checked: false,
+    },
+    {
+      id: 'chk_3',
+      label: 'No Red-Folder High-Impact news within prop-firm buffer window',
+      setupScope: 'All',
+      required: true,
+      checked: false,
+    },
+    {
+      id: 'chk_4',
+      label: 'Clean Liquidity Sweep / Inducement taken before entry trigger',
+      setupScope: 'Liquidity Sweep + CISD + BB',
+      required: true,
+      checked: false,
+    },
+    {
+      id: 'chk_5',
+      label: 'Displacement candle closed confirming CISD & Breaker Block',
+      setupScope: 'Liquidity Sweep + CISD + BB',
+      required: true,
+      checked: false,
+    },
+    {
+      id: 'chk_6',
+      label: 'Internal Inducement swept and CISD candle closed cleanly',
+      setupScope: 'Inducement + CISD',
+      required: true,
+      checked: false,
+    },
+    {
+      id: 'chk_7',
+      label: 'Position size verified in Lot Size calculator (Risk ≤ 0.5%–1.0%)',
+      setupScope: 'All',
+      required: true,
+      checked: false,
+    },
+  ];
+}
+
+export function createDefaultGuardrailConfig(): GuardrailConfig {
+  return {
+    maxTradesPerDay: 3,
+    maxConsecutiveLosses: 2,
+    cooldownMinutes: 15,
+    newsBufferMinutes: 2,
+    enableTiltGuard: true,
+    enableNewsWarnings: true,
+    lockoutUntilIso: null,
+    lockoutReason: null,
+    checklistDate: getTodayISO(),
+  };
+}
+
+export function createDefaultNewsEvents(baseDate: string = getTodayISO()): EconomicNewsEvent[] {
+  return [
+    {
+      id: 'news_1',
+      date: baseDate,
+      nyTime: '08:30',
+      currency: 'USD',
+      impact: 'High',
+      title: 'US Core CPI (MoM) & CPI (YoY)',
+      forecast: '0.3%',
+      previous: '0.3%',
+    },
+    {
+      id: 'news_2',
+      date: baseDate,
+      nyTime: '10:00',
+      currency: 'USD',
+      impact: 'High',
+      title: 'ISM Services PMI',
+      forecast: '53.8',
+      previous: '54.1',
+    },
+    {
+      id: 'news_3',
+      date: baseDate,
+      nyTime: '14:00',
+      currency: 'USD',
+      impact: 'High',
+      title: 'FOMC Monetary Policy Statement & Press Conference',
+      forecast: '4.50%',
+      previous: '4.75%',
+    },
+    {
+      id: 'news_4',
+      date: addDaysISO(baseDate, 1),
+      nyTime: '08:30',
+      currency: 'USD',
+      impact: 'High',
+      title: 'Initial Jobless Claims & Core PPI (MoM)',
+      forecast: '220K',
+      previous: '217K',
+    },
+    {
+      id: 'news_5',
+      date: addDaysISO(baseDate, 1),
+      nyTime: '08:15',
+      currency: 'EUR',
+      impact: 'High',
+      title: 'ECB Interest Rate Decision',
+      forecast: '3.25%',
+      previous: '3.40%',
+    },
+    {
+      id: 'news_6',
+      date: addDaysISO(baseDate, 2),
+      nyTime: '02:00',
+      currency: 'GBP',
+      impact: 'High',
+      title: 'UK CPI (YoY) & Core Inflation',
+      forecast: '2.2%',
+      previous: '2.3%',
+    },
+    {
+      id: 'news_7',
+      date: addDaysISO(baseDate, 2),
+      nyTime: '08:30',
+      currency: 'USD',
+      impact: 'High',
+      title: 'Non-Farm Payrolls (NFP) & Unemployment Rate',
+      forecast: '185K',
+      previous: '192K',
+    },
+    {
+      id: 'news_8',
+      date: addDaysISO(baseDate, 3),
+      nyTime: '23:00',
+      currency: 'JPY',
+      impact: 'Medium',
+      title: 'BoJ Monetary Policy Summary of Opinions',
+      forecast: '—',
+      previous: '—',
+    },
+  ];
+}
 
 function makeDemoChartSvg(title: string, subtitle: string, isAfter: boolean): string {
   const accent = isAfter ? '#10b981' : '#3b82f6';
