@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tradebook-v2.4.1';
+const CACHE_NAME = 'tradebook-v2.5.0';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -50,12 +50,17 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
-  // Never cache Vite dev server modules or Google API / Auth requests
+  // Never cache Vite dev server modules or Google API / Firebase Auth requests
   if (
     isDevModuleRequest(url) ||
+    url.pathname.startsWith('/__/auth/') ||
     url.hostname.includes('googleapis.com') ||
+    url.hostname.includes('google.com') ||
     url.hostname.includes('firebaseapp.com') ||
-    url.hostname.includes('gstatic.com') === false && url.origin !== self.location.origin && !url.hostname.includes('fonts.googleapis.com')
+    url.hostname.includes('firebaseio.com') ||
+    (url.hostname.includes('gstatic.com') === false &&
+      url.origin !== self.location.origin &&
+      !url.hostname.includes('fonts.googleapis.com'))
   ) {
     return;
   }

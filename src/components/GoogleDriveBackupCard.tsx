@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   AlertTriangle,
+  Check,
   Cloud,
   CloudDownload,
   CloudUpload,
+  Copy,
   LogOut,
   RefreshCw,
   Trash2,
@@ -15,10 +17,12 @@ import {
   deleteDriveBackup,
   downloadDriveBackup,
   DriveBackupFile,
+  FIREBASE_PROJECT_ID,
   googleSignIn,
   googleSignOut,
   initGoogleAuth,
   listDriveBackups,
+  parseGoogleAuthError,
   updateDriveBackup,
 } from '../services/googleDrive';
 import { getTodayISO } from '../utils/format';
@@ -67,6 +71,8 @@ export const GoogleDriveBackupCard: React.FC<GoogleDriveBackupCardProps> = ({
   const [files, setFiles] = useState<DriveBackupFile[]>([]);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [status, setStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [unauthorizedHost, setUnauthorizedHost] = useState<string | null>(null);
+  const [copiedHost, setCopiedHost] = useState(false);
 
   const refreshFiles = useCallback(async () => {
     setIsBusy(true);
@@ -104,6 +110,7 @@ export const GoogleDriveBackupCard: React.FC<GoogleDriveBackupCardProps> = ({
   const handleSignIn = async () => {
     setIsLoggingIn(true);
     setStatus(null);
+    setUnauthorizedHost(null);
     try {
       const res = await googleSignIn();
       setUser(res.user);
@@ -111,10 +118,26 @@ export const GoogleDriveBackupCard: React.FC<GoogleDriveBackupCardProps> = ({
       await refreshFiles();
       setStatus({ type: 'ok', text: `Connected Google Drive as ${res.user.email ?? 'Google User'}.` });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Sign-in cancelled or failed.';
-      setStatus({ type: 'err', text: msg });
+      const info = parseGoogleAuthError(err);
+      if (info.isUnauthorizedDomain) {
+        setUnauthorizedHost(info.hostname || window.location.hostname || 'this domain');
+        setStatus(null);
+      } else {
+        setStatus({ type: 'err', text: info.message });
+      }
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleCopyHost = async () => {
+    if (!unauthorizedHost) return;
+    try {
+      await navigator.clipboard.writeText(unauthorizedHost);
+      setCopiedHost(true);
+      window.setTimeout(() => setCopiedHost(false), 2000);
+    } catch {
+      // Clipboard API unavailable
     }
   };
 
@@ -398,6 +421,68 @@ export const GoogleDriveBackupCard: React.FC<GoogleDriveBackupCardProps> = ({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {unauthorizedHost && (
+        <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 space-y-2.5 text-xs">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="space-y-1 min-w-0">
+              <p className="font-semibold text-rose-300">
+                Domain Authorization Needed for Google Sign-In
+              </p>
+              <p className="text-[var(--text-secondary)] leading-relaxed">
+                Your live website domain must be added to Firebase Authentication&apos;s Authorized
+                Domains list for project{' '}
+                <span className="font-mono-num font-semibold text-[var(--text-primary)]">
+                  {FIREBASE_PROJECT_ID}
+                </span>
+                .
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card-solid)] px-3 py-2">
+            <code className="font-mono-num text-xs font-semibold text-[var(--text-primary)] break-all">
+              {unauthorizedHost}
+            </code>
+            <button
+              type="button"
+              onClick={handleCopyHost}
+              className="tb-btn-ghost inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium cursor-pointer shrink-0"
+            >
+              {copiedHost ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  Copy Domain
+                </>
+              )}
+            </button>
+          </div>
+
+          <ol className="list-decimal pl-4 space-y-1 text-[11px] text-[var(--text-secondary)]">
+            <li>
+              Open <strong className="text-[var(--text-primary)]">Firebase Console</strong> → select
+              project <span className="font-mono-num">{FIREBASE_PROJECT_ID}</span>.
+            </li>
+            <li>
+              Go to <strong className="text-[var(--text-primary)]">Authentication</strong> →{' '}
+              <strong className="text-[var(--text-primary)]">Settings</strong> →{' '}
+              <strong className="text-[var(--text-primary)]">Authorized domains</strong>.
+            </li>
+            <li>
+              Click <strong className="text-[var(--text-primary)]">Add domain</strong>, paste{' '}
+              <span className="font-mono-num text-[var(--text-primary)]">{unauthorizedHost}</span>,
+              save, and click <strong className="text-[var(--text-primary)]">Sign in with Google</strong>{' '}
+              again.
+            </li>
+          </ol>
         </div>
       )}
 

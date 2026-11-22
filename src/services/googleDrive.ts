@@ -10,16 +10,72 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { BackupPayload } from '../types';
 
 export const SCOPES = ['https://www.googleapis.com/auth/drive.file'] as const;
+export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => provider.addScope(scope));
+provider.setCustomParameters({ prompt: 'select_account' });
 
 let isSigningIn = false;
 // In-memory only: never persisted to localStorage or sessionStorage
 let cachedAccessToken: string | null = null;
+
+export interface GoogleAuthErrorInfo {
+  code: string;
+  isUnauthorizedDomain: boolean;
+  hostname: string;
+  message: string;
+}
+
+export function parseGoogleAuthError(err: unknown): GoogleAuthErrorInfo {
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code?: unknown }).code ?? '')
+      : '';
+  const rawMessage = err instanceof Error ? err.message : 'Sign-in failed. Please try again.';
+
+  if (code === 'auth/unauthorized-domain' || rawMessage.includes('auth/unauthorized-domain')) {
+    return {
+      code: 'auth/unauthorized-domain',
+      isUnauthorizedDomain: true,
+      hostname,
+      message: `This website domain (${hostname || 'current domain'}) is not authorized for Google Sign-In yet.`,
+    };
+  }
+
+  if (code === 'auth/popup-blocked' || rawMessage.includes('auth/popup-blocked')) {
+    return {
+      code: 'auth/popup-blocked',
+      isUnauthorizedDomain: false,
+      hostname,
+      message: 'Sign-in popup was blocked by your browser. Please allow popups for this site and try again.',
+    };
+  }
+
+  if (
+    code === 'auth/popup-closed-by-user' ||
+    code === 'auth/cancelled-popup-request' ||
+    rawMessage.includes('auth/popup-closed-by-user')
+  ) {
+    return {
+      code: 'auth/popup-closed-by-user',
+      isUnauthorizedDomain: false,
+      hostname,
+      message: 'Google Sign-In popup was closed before completing.',
+    };
+  }
+
+  return {
+    code,
+    isUnauthorizedDomain: false,
+    hostname,
+    message: rawMessage,
+  };
+}
 
 export interface DriveBackupFile {
   id: string;
