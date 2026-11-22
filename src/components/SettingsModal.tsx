@@ -2,7 +2,9 @@ import React, { useRef, useState } from 'react';
 import {
   Check,
   Download,
+  ImagePlus,
   RotateCcw,
+  Trash2,
   Upload,
   X,
   AlertTriangle,
@@ -16,6 +18,8 @@ import {
   FontId,
   ThemeId,
 } from '../types';
+import { compressImageFile } from '../db/storage';
+import { WALLPAPER_PRESETS } from '../data/wallpapers';
 import { TradebookLogo } from './TradebookLogo';
 import { GoogleDriveBackupCard } from './GoogleDriveBackupCard';
 import { usePWAInstall } from '../hooks/usePWAInstall';
@@ -23,7 +27,10 @@ import { usePWAInstall } from '../hooks/usePWAInstall';
 interface SettingsModalProps {
   open: boolean;
   settings: AppSettings;
+  customWallpaperUrl: string | null;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
+  onUploadWallpaper: (dataUrl: string) => Promise<void>;
+  onRemoveWallpaper: () => Promise<void>;
   onBuildBackupPayload: () => Promise<BackupPayload>;
   onApplyBackupPayload: (payload: Partial<BackupPayload>) => Promise<{ ok: boolean; message: string }>;
   onBackupJson: () => Promise<void>;
@@ -111,7 +118,10 @@ const TOGGLE_ITEMS: { key: keyof AppSettings; label: string; desc: string }[] = 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   open,
   settings,
+  customWallpaperUrl,
   onUpdateSettings,
+  onUploadWallpaper,
+  onRemoveWallpaper,
   onBuildBackupPayload,
   onApplyBackupPayload,
   onBackupJson,
@@ -120,11 +130,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const wallpaperInputRef = useRef<HTMLInputElement | null>(null);
   const [statusMsg, setStatusMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [wallpaperBusy, setWallpaperBusy] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const { isInstallable, isInstalled, install } = usePWAInstall();
 
   if (!open) return null;
+
+  const handleWallpaperUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setWallpaperBusy(true);
+    try {
+      const dataUrl = await compressImageFile(file, 1920, 0.85);
+      await onUploadWallpaper(dataUrl);
+    } catch {
+      setStatusMsg({ type: 'err', text: 'Could not read wallpaper image. Try PNG, JPG, or WebP.' });
+    } finally {
+      setWallpaperBusy(false);
+      e.target.value = '';
+    }
+  };
 
   const handleBackup = async () => {
     await onBackupJson();
@@ -243,6 +270,160 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               );
             })}
+          </div>
+        </section>
+
+        {/* Background Wallpaper */}
+        <section>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                Background Wallpaper
+              </h3>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Pick a built-in ambient backdrop or upload your own photo (saved locally offline).
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={wallpaperBusy}
+              onClick={() => wallpaperInputRef.current?.click()}
+              className="tb-btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium cursor-pointer disabled:opacity-50"
+            >
+              <ImagePlus className="w-3.5 h-3.5" />
+              {wallpaperBusy
+                ? 'Processing...'
+                : customWallpaperUrl
+                ? 'Change Photo'
+                : 'Upload Photo'}
+            </button>
+            <input
+              ref={wallpaperInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleWallpaperUpload}
+            />
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-3.5 space-y-3.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {WALLPAPER_PRESETS.map((wp) => {
+                const active = settings.wallpaperPreset === wp.id;
+                return (
+                  <button
+                    key={wp.id}
+                    type="button"
+                    onClick={() => onUpdateSettings({ wallpaperPreset: wp.id })}
+                    className="group relative overflow-hidden rounded-xl text-left transition-all cursor-pointer"
+                    style={{
+                      border: active
+                        ? '2px solid var(--accent)'
+                        : '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div
+                      className="h-14 w-full"
+                      style={{
+                        background: wp.background,
+                        backgroundSize: wp.backgroundSize,
+                      }}
+                    />
+                    <div className="flex items-center justify-between gap-1.5 bg-[var(--bg-card-solid)] px-2.5 py-1.5">
+                      <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">
+                        {wp.label}
+                      </span>
+                      {active && <Check className="w-3.5 h-3.5 text-[var(--accent-text)] shrink-0" />}
+                    </div>
+                  </button>
+                );
+              })}
+
+              {/* Custom Uploaded Wallpaper Card */}
+              {customWallpaperUrl && (
+                <div
+                  className="relative overflow-hidden rounded-xl transition-all"
+                  style={{
+                    border:
+                      settings.wallpaperPreset === 'custom'
+                        ? '2px solid var(--accent)'
+                        : '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onUpdateSettings({ wallpaperPreset: 'custom' })}
+                    className="block w-full text-left cursor-pointer"
+                  >
+                    <div
+                      className="h-14 w-full bg-cover bg-center"
+                      style={{ backgroundImage: `url(${customWallpaperUrl})` }}
+                    />
+                    <div className="flex items-center justify-between gap-1.5 bg-[var(--bg-card-solid)] px-2.5 py-1.5">
+                      <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">
+                        Custom Photo
+                      </span>
+                      {settings.wallpaperPreset === 'custom' && (
+                        <Check className="w-3.5 h-3.5 text-[var(--accent-text)] shrink-0" />
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void onRemoveWallpaper()}
+                    aria-label="Remove custom wallpaper"
+                    title="Remove custom photo"
+                    className="absolute top-1.5 right-1.5 rounded-lg bg-black/65 p-1 text-rose-300 hover:bg-rose-600 hover:text-white cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Wallpaper Dim & Blur Sliders (when any wallpaper is active) */}
+            {settings.wallpaperPreset !== 'none' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-[var(--border-subtle)]">
+                <div>
+                  <div className="flex items-center justify-between text-[11px] mb-1.5">
+                    <span className="text-[var(--text-secondary)] font-medium">
+                      Readability Dim Overlay
+                    </span>
+                    <span className="font-mono-num text-[var(--text-primary)] font-semibold">
+                      {settings.wallpaperDim}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="85"
+                    step="5"
+                    value={settings.wallpaperDim}
+                    onChange={(e) => onUpdateSettings({ wallpaperDim: Number(e.target.value) })}
+                    className="tb-range w-full"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-[11px] mb-1.5">
+                    <span className="text-[var(--text-secondary)] font-medium">
+                      Wallpaper Blur
+                    </span>
+                    <span className="font-mono-num text-[var(--text-primary)] font-semibold">
+                      {settings.wallpaperBlur}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="20"
+                    step="1"
+                    value={settings.wallpaperBlur}
+                    onChange={(e) => onUpdateSettings({ wallpaperBlur: Number(e.target.value) })}
+                    className="tb-range w-full"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

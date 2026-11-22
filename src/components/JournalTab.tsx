@@ -826,7 +826,7 @@ export const JournalTab: React.FC<JournalTabProps> = ({
               className="tb-btn-primary inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold cursor-pointer whitespace-nowrap"
             >
               <Upload className="w-3.5 h-3.5" />
-              Import CSV
+              Import MT5 / CSV
             </button>
             <button
               type="button"

@@ -12,6 +12,14 @@ export type FontId = 'inter' | 'ubuntu' | 'ios' | 'comfortaa' | 'mono';
 export type ClockStyleId = 'roman' | 'modern' | 'neon' | 'digital';
 export type CurrencyId = 'USD' | 'INR';
 export type DstMode = 'auto' | 'winter' | 'summer';
+export type WallpaperPresetId =
+  | 'none'
+  | 'aurora'
+  | 'midnight-mesh'
+  | 'emerald-matrix'
+  | 'sunset-horizon'
+  | 'obsidian-grid'
+  | 'custom';
 
 export type AccountStage = 'Funded' | 'Eval Phase 1' | 'Eval Phase 2';
 export type DrawdownType = 'EOD Trailing' | 'Intraday Trailing' | 'Static';
@@ -127,6 +135,9 @@ export interface AppSettings {
   breachGuardrail: boolean;
   compactAccounts: boolean;
   privacyMode: boolean;
+  wallpaperPreset: WallpaperPresetId;
+  wallpaperDim: number; // 0 - 85 (%)
+  wallpaperBlur: number; // 0 - 20 (px)
 }
 
 export interface AccountMetrics {

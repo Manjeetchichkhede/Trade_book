@@ -15,6 +15,7 @@ import {
   clearAllImages,
   deleteImage,
   getAllImages,
+  getImage,
   kvGet,
   kvSet,
   saveImage,
@@ -26,6 +27,7 @@ import {
   createDemoSeed,
   DEFAULT_SETTINGS,
 } from './data/demoData';
+import { CUSTOM_WALLPAPER_IMAGE_ID, getWallpaperPreset } from './data/wallpapers';
 import { getTodayISO } from './utils/format';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Navbar } from './components/Navbar';
@@ -61,6 +63,7 @@ export default function App() {
   const [guardrailConfig, setGuardrailConfig] = useState<GuardrailConfig>(() =>
     createDefaultGuardrailConfig()
   );
+  const [customWallpaperUrl, setCustomWallpaperUrl] = useState<string | null>(null);
 
   const [preselectedJournalAcc, setPreselectedJournalAcc] = useState<string | null>(null);
   const [preselectedPayoutAcc, setPreselectedPayoutAcc] = useState<string | null>(null);
@@ -80,6 +83,7 @@ export default function App() {
         savedChecklist,
         savedNews,
         savedGuardrail,
+        savedWallpaper,
       ] = await Promise.all([
         kvGet<boolean>('seeded_v2'),
         kvGet<PropAccount[]>('accounts'),
@@ -89,9 +93,12 @@ export default function App() {
         kvGet<ChecklistItem[]>('checklist'),
         kvGet<EconomicNewsEvent[]>('newsEvents'),
         kvGet<GuardrailConfig>('guardrailConfig'),
+        getImage(CUSTOM_WALLPAPER_IMAGE_ID),
       ]);
 
       if (!active) return;
+
+      setCustomWallpaperUrl(savedWallpaper);
 
       const today = getTodayISO();
       const defaultChecklist = createDefaultChecklist();
@@ -215,6 +222,21 @@ export default function App() {
     setSettings((prev) => ({ ...prev, ...patch }));
   }, []);
 
+  const handleUploadWallpaper = useCallback(async (dataUrl: string) => {
+    await saveImage(CUSTOM_WALLPAPER_IMAGE_ID, dataUrl);
+    setCustomWallpaperUrl(dataUrl);
+    setSettings((prev) => ({ ...prev, wallpaperPreset: 'custom' }));
+  }, []);
+
+  const handleRemoveWallpaper = useCallback(async () => {
+    await deleteImage(CUSTOM_WALLPAPER_IMAGE_ID);
+    setCustomWallpaperUrl(null);
+    setSettings((prev) => ({
+      ...prev,
+      wallpaperPreset: prev.wallpaperPreset === 'custom' ? 'none' : prev.wallpaperPreset,
+    }));
+  }, []);
+
   const handleSaveAccount = useCallback((account: PropAccount) => {
     setAccounts((prev) => {
       const exists = prev.some((a) => a.id === account.id);
@@ -293,6 +315,13 @@ export default function App() {
         await Promise.all(
           Object.entries(parsed.images).map(([id, dataUrl]) => saveImage(id, String(dataUrl)))
         );
+        setCustomWallpaperUrl(
+          parsed.images[CUSTOM_WALLPAPER_IMAGE_ID]
+            ? String(parsed.images[CUSTOM_WALLPAPER_IMAGE_ID])
+            : null
+        );
+      } else {
+        setCustomWallpaperUrl(null);
       }
       setAccounts(parsed.accounts);
       setTrades(parsed.trades);
@@ -346,14 +375,16 @@ export default function App() {
   );
 
   const handleResetDemoData = useCallback(async () => {
+    const existingWallpaper = await getImage(CUSTOM_WALLPAPER_IMAGE_ID);
     await clearAllImages();
     const demo = createDemoSeed();
     const freshChecklist = createDefaultChecklist();
     const freshNews = createDefaultNewsEvents();
     const freshGuardrail = createDefaultGuardrailConfig();
-    await Promise.all(
-      Object.entries(demo.images).map(([id, dataUrl]) => saveImage(id, dataUrl))
-    );
+    await Promise.all([
+      ...Object.entries(demo.images).map(([id, dataUrl]) => saveImage(id, dataUrl)),
+      ...(existingWallpaper ? [saveImage(CUSTOM_WALLPAPER_IMAGE_ID, existingWallpaper)] : []),
+    ]);
     setAccounts(demo.accounts);
     setTrades(demo.trades);
     setRoiEntries(demo.roiEntries);
@@ -371,10 +402,51 @@ export default function App() {
     ]);
   }, []);
 
+  const activePreset = getWallpaperPreset(settings.wallpaperPreset);
+  const hasCustomWallpaper = settings.wallpaperPreset === 'custom' && Boolean(customWallpaperUrl);
+  const showWallpaperLayer =
+    hasCustomWallpaper || (settings.wallpaperPreset !== 'none' && Boolean(activePreset));
+  const dimScrimColor =
+    settings.theme === 'light'
+      ? `rgba(238, 242, 248, ${Math.min(0.85, Math.max(0, settings.wallpaperDim / 100))})`
+      : `rgba(6, 10, 20, ${Math.min(0.85, Math.max(0, settings.wallpaperDim / 100))})`;
+
   return (
     <div className="relative min-h-screen w-full overflow-x-clip">
       {/* Fixed ambient multi-tone radial background gradient */}
       <div className="tb-ambient-bg" aria-hidden="true" />
+
+      {/* Custom or Preset Background Wallpaper Layer */}
+      {showWallpaperLayer && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
+        >
+          <div
+            className="absolute inset-0 transition-all duration-300"
+            style={{
+              ...(hasCustomWallpaper
+                ? {
+                    backgroundImage: `url(${customWallpaperUrl})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                  }
+                : {
+                    background: activePreset?.background,
+                    backgroundSize: activePreset?.backgroundSize,
+                  }),
+              filter: settings.wallpaperBlur > 0 ? `blur(${settings.wallpaperBlur}px)` : undefined,
+              transform: settings.wallpaperBlur > 0 ? 'scale(1.06)' : undefined,
+            }}
+          />
+          <div
+            className="absolute inset-0 transition-colors duration-200"
+            style={{ backgroundColor: dimScrimColor }}
+          />
+        </div>
+      )}
+
       {/* Interactive cursor-reactive ambient animation on Windows/desktop */}
       <CursorBackground
         enabled={settings.cursorAnimation && settings.bgGradient}
@@ -488,7 +560,10 @@ export default function App() {
       <SettingsModal
         open={settingsOpen}
         settings={settings}
+        customWallpaperUrl={customWallpaperUrl}
         onUpdateSettings={handleUpdateSettings}
+        onUploadWallpaper={handleUploadWallpaper}
+        onRemoveWallpaper={handleRemoveWallpaper}
         onBuildBackupPayload={handleBuildBackupPayload}
         onApplyBackupPayload={handleApplyBackupPayload}
         onBackupJson={handleBackupJson}

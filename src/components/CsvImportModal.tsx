@@ -11,8 +11,9 @@ import {
   buildTradePreviews,
   convertPreviewsToTrades,
   CsvColumnMapping,
-  parseBrokerCsvText,
+  parseBrokerReportText,
   ParsedCsvData,
+  readBrokerFileText,
 } from '../utils/csvParser';
 import { formatMoney, getTodayISO } from '../utils/format';
 
@@ -24,6 +25,42 @@ interface CsvImportModalProps {
   onImportTrades: (trades: Trade[]) => void;
   onClose: () => void;
 }
+
+const SAMPLE_MT5_HTML = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Trade History Report</title></head>
+<body>
+<table>
+  <tr><th colspan="13">Trade History Report</th></tr>
+  <tr><td colspan="13">Account: 51092841 (USD, Hedge)</td></tr>
+  <tr><th colspan="13"><b>Positions</b></th></tr>
+  <tr>
+    <td><b>Time</b></td><td><b>Position</b></td><td><b>Symbol</b></td><td><b>Type</b></td>
+    <td><b>Volume</b></td><td><b>Price</b></td><td><b>S / L</b></td><td><b>T / P</b></td>
+    <td><b>Time</b></td><td><b>Price</b></td><td><b>Commission</b></td><td><b>Swap</b></td><td><b>Profit</b></td>
+  </tr>
+  <tr>
+    <td>2026.11.19 08:42:10</td><td>50918271</td><td>XAUUSD.pro</td><td>buy</td>
+    <td class="hidden" colspan="8">London CISD Sweep</td>
+    <td>1.00</td><td>2668.50</td><td>2663.50</td><td>2679.00</td>
+    <td>2026.11.19 09:38:22</td><td>2679.00</td><td>-7.00</td><td>0.00</td><td>1 050.00</td>
+  </tr>
+  <tr>
+    <td>2026.11.20 14:35:05</td><td>50919044</td><td>NAS100</td><td>sell</td>
+    <td class="hidden" colspan="8">NY AM Silver Bullet</td>
+    <td>2.00</td><td>20945.00</td><td>20975.00</td><td>20875.00</td>
+    <td>2026.11.20 15:18:40</td><td>20875.00</td><td>-4.50</td><td>0.00</td><td>700.00</td>
+  </tr>
+  <tr>
+    <td>2026.11.21 15:02:18</td><td>50920118</td><td>EURUSD.raw</td><td>buy</td>
+    <td class="hidden" colspan="8">Stopped at BE/SL</td>
+    <td>2.50</td><td>1.08350</td><td>1.08230</td><td>1.08650</td>
+    <td>2026.11.21 15:26:09</td><td>1.08230</td><td>-10.00</td><td>0.00</td><td>-300.00</td>
+  </tr>
+  <tr><th colspan="13"><b>Orders</b></th></tr>
+</table>
+</body>
+</html>`;
 
 const SAMPLE_MT5_CSV = `Position,Time,Symbol,Type,Volume,Price,Close Time,Commission,Swap,Profit,Comment
 104821,2026.11.18 09:15:00,XAUUSD.pro,buy,1.20,2678.40,2026.11.18 10:05:00,-8.40,0.00,920.00,London CISD sweep
@@ -56,11 +93,13 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
   const [selectedRowIds, setSelectedRowIds] = useState<Set<number>>(new Set());
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const loadRawCsv = (raw: string, name: string) => {
+  const loadRawReport = (raw: string, name: string) => {
     setErrorMsg(null);
-    const result = parseBrokerCsvText(raw);
+    const result = parseBrokerReportText(raw, name);
     if (result.headers.length === 0 || result.rows.length === 0) {
-      setErrorMsg('Could not find valid CSV rows. Check that the file has a header and trade rows.');
+      setErrorMsg(
+        'Could not find closed trade rows. For MT5 HTML reports, export via History → Right-click → Report → HTML (Open XML/HTML).'
+      );
       return;
     }
     setParsed(result);
@@ -86,8 +125,12 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    loadRawCsv(text, file.name);
+    try {
+      const text = await readBrokerFileText(file);
+      loadRawReport(text, file.name);
+    } catch {
+      setErrorMsg('Unable to read this file. Please try exporting again from MT5 or your broker.');
+    }
     e.target.value = '';
   };
 
@@ -148,17 +191,18 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
             <FileSpreadsheet className="w-5 h-5 text-[var(--accent-text)]" />
             <div>
               <h2 className="text-base sm:text-lg font-bold text-[var(--text-primary)]">
-                Broker &amp; MT5 CSV Trade Importer
+                Import MT5 HTML &amp; Broker CSV Trade History
               </h2>
               <p className="text-xs text-[var(--text-muted)]">
-                Supports MetaTrader 5, MT4, cTrader, TradeLocker, and standard broker CSV/TSV exports.
+                Supports MetaTrader 5 HTML reports (.html / .htm), MT4 statements, and broker CSV/TSV
+                exports.
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close CSV importer"
+            aria-label="Close trade importer"
             className="p-2 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -171,10 +215,11 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
             <Upload className="w-6 h-6 text-[var(--accent-text)] shrink-0" />
             <div>
               <p className="text-sm font-semibold text-[var(--text-primary)]">
-                {fileName ? `Loaded: ${fileName}` : 'Upload Broker History CSV / TSV'}
+                {fileName ? `Loaded: ${fileName}` : 'Upload MT5 HTML Report or Broker CSV'}
               </p>
               <p className="text-xs text-[var(--text-muted)]">
-                100% local browser parsing · Duplicate rows are flagged automatically.
+                100% local browser parsing · Handles MT5 UTF-16LE HTML Positions, Commissions &amp;
+                Swaps automatically.
               </p>
             </div>
           </div>
@@ -182,22 +227,31 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => loadRawCsv(SAMPLE_MT5_CSV, `sample-mt5-${getTodayISO()}.csv`)}
+              onClick={() =>
+                loadRawReport(SAMPLE_MT5_HTML, `ReportHistory-MT5-${getTodayISO()}.html`)
+              }
               className="tb-btn-ghost rounded-xl px-3 py-2 text-xs font-medium cursor-pointer"
             >
-              Load Sample MT5 CSV
+              Sample MT5 HTML
+            </button>
+            <button
+              type="button"
+              onClick={() => loadRawReport(SAMPLE_MT5_CSV, `sample-mt5-${getTodayISO()}.csv`)}
+              className="tb-btn-ghost rounded-xl px-3 py-2 text-xs font-medium cursor-pointer"
+            >
+              Sample CSV
             </button>
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
               className="tb-btn-primary rounded-xl px-4 py-2 text-xs font-semibold cursor-pointer"
             >
-              Choose File
+              Choose HTML / CSV
             </button>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,.tsv,.txt,text/csv"
+              accept=".html,.htm,.csv,.tsv,.txt,text/html,text/csv"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -262,9 +316,10 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
 
             {/* Column Mapper */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="font-semibold text-[var(--text-primary)]">
-                  Column Mapping (Detected: {parsed.detectedPreset.toUpperCase()})
+                  Column Mapping (Detected:{' '}
+                  {parsed.reportInfo || parsed.detectedPreset.toUpperCase()})
                 </span>
                 <span className="text-[var(--text-muted)]">
                   {validPreviews.length} valid trade rows found

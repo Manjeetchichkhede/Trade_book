@@ -25,6 +25,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   breachGuardrail: true,
   compactAccounts: false,
   privacyMode: false,
+  wallpaperPreset: 'none',
+  wallpaperDim: 45,
+  wallpaperBlur: 2,
 };
 
 export function createDefaultChecklist(): ChecklistItem[] {
