@@ -13,7 +13,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   traderName: '',
   theme: 'dark',
   font: 'inter',
-  fontColor: '',
   clockStyle: 'modern',
   currency: 'USD',
   dstMode: 'auto',
@@ -21,6 +20,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   glassNav: true,
   bgGradient: true,
   cursorAnimation: true,
+  cursorEffect: 'aurora-grid',
   liveClocksOverview: true,
   breachGuardrail: true,
   compactAccounts: false,
@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   wallpaperPreset: 'none',
   wallpaperDim: 45,
   wallpaperBlur: 2,
+  windowOpacity: 70,
 };
 
 export function createDefaultChecklist(): ChecklistItem[] {

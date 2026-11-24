@@ -12,19 +12,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import {
-  AlertTriangle,
-  Briefcase,
-  Calculator,
-  Clock,
-  Plus,
-  ShieldAlert,
-  ShieldCheck,
-} from 'lucide-react';
+import { ShieldAlert, ShieldCheck } from 'lucide-react';
+import { AnalogDial } from './AnalogDial';
 import {
   AppSettings,
-  EconomicNewsEvent,
-  GuardrailConfig,
   PropAccount,
   RoiEntry,
   TabId,
@@ -36,7 +27,6 @@ import {
   computePortfolioKpis,
 } from '../utils/calculations';
 import { formatMoney, formatPct, formatR, USD_TO_INR } from '../utils/format';
-import { evaluateNewsEvents, getActiveNewsAlert } from '../utils/guardrails';
 import { getActiveSessionHeadline, getIstAndNyClocks } from '../utils/sessions';
 
 interface OverviewTabProps {
@@ -44,8 +34,6 @@ interface OverviewTabProps {
   trades: Trade[];
   roiEntries: RoiEntry[];
   settings: AppSettings;
-  newsEvents: EconomicNewsEvent[];
-  guardrailConfig: GuardrailConfig;
   onNavigateTab: (tab: TabId) => void;
 }
 
@@ -54,8 +42,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   trades,
   roiEntries,
   settings,
-  newsEvents,
-  guardrailConfig,
   onNavigateTab,
 }) => {
   const [now, setNow] = useState<Date>(() => new Date());
@@ -78,23 +64,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   );
   const curveData = useMemo(() => buildPerformanceCurve(trades), [trades]);
   const audit = useMemo(() => computeDisciplineAudit(trades), [trades]);
-
-  const activeNewsAlert = useMemo(() => {
-    if (!guardrailConfig.enableNewsWarnings) return null;
-    const evaluated = evaluateNewsEvents(
-      newsEvents,
-      now,
-      settings.dstMode,
-      guardrailConfig.newsBufferMinutes
-    );
-    return getActiveNewsAlert(evaluated);
-  }, [
-    newsEvents,
-    now,
-    settings.dstMode,
-    guardrailConfig.enableNewsWarnings,
-    guardrailConfig.newsBufferMinutes,
-  ]);
 
   const chartSeries = useMemo(() => {
     const mult = settings.currency === 'INR' ? USD_TO_INR : 1;
@@ -156,98 +125,41 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               </p>
             </div>
 
-            {/* Live High-Impact News Alert Strip */}
-            {activeNewsAlert && (
-              <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                <button
-                  type="button"
-                  onClick={() => onNavigateTab('guard')}
-                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
-                    activeNewsAlert.level === 'restricted'
-                      ? 'border-rose-500/45 bg-rose-500/15 text-rose-400 hover:bg-rose-500/25'
-                      : 'border-amber-500/40 bg-amber-500/12 text-amber-400 hover:bg-amber-500/20'
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    {activeNewsAlert.level === 'restricted' ? 'News Window:' : 'News Soon:'}{' '}
-                    {activeNewsAlert.event.event.currency} {activeNewsAlert.event.event.title} (
-                    {activeNewsAlert.event.countdownText})
-                  </span>
-                </button>
-              </div>
-            )}
-
-            {/* Quick Shortcuts */}
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
-              <button
-                type="button"
-                onClick={() => onNavigateTab('journal')}
-                className="tb-btn-primary inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold cursor-pointer whitespace-nowrap"
-              >
-                <Plus className="w-4 h-4" />
-                Log Trade
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('accounts')}
-                className="tb-btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium cursor-pointer whitespace-nowrap"
-              >
-                <Briefcase className="w-3.5 h-3.5" />
-                Accounts
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('lotsize')}
-                className="tb-btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium cursor-pointer whitespace-nowrap"
-              >
-                <Calculator className="w-3.5 h-3.5" />
-                Lot Size
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('sessions')}
-                className="tb-btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium cursor-pointer whitespace-nowrap"
-              >
-                <Clock className="w-3.5 h-3.5" />
-                Sessions
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('guard')}
-                className="tb-btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium cursor-pointer whitespace-nowrap"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Guard
-              </button>
-            </div>
           </div>
 
-          {/* Live Ticking IST & NY Clocks */}
+          {/* Live Ticking IST & NY Analog Clocks */}
           {settings.liveClocksOverview && (
             <div className="grid grid-cols-2 gap-3 lg:w-auto shrink-0">
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 min-w-[148px]">
-                <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-                  <span>India (IST)</span>
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 flex flex-col items-center text-center min-w-[144px]">
+                <div className="flex items-center justify-between w-full text-[10px] text-[var(--text-muted)] mb-1.5">
+                  <span className="font-semibold text-[var(--text-secondary)]">India (IST)</span>
                   <span>UTC+5:30</span>
                 </div>
-                <p className="mt-1 font-mono-num text-xl sm:text-2xl font-bold text-[var(--text-primary)] tracking-tight">
-                  {clocks.ist.formatted24}{' '}
-                  <span className="text-xs sm:text-sm font-medium text-[var(--text-secondary)] whitespace-nowrap">
-                    ({clocks.ist.formatted12} {clocks.ist.ampm})
-                  </span>
+                <AnalogDial
+                  clock={clocks.ist}
+                  styleId={settings.clockStyle}
+                  sizeClass="w-24 h-24 sm:w-28 sm:h-28"
+                />
+                <p className="mt-1.5 font-mono-num text-[11px] font-semibold text-[var(--text-primary)] whitespace-nowrap">
+                  {clocks.ist.formatted12} {clocks.ist.ampm}
                 </p>
-                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{clocks.ist.dateLabel}</p>
+                <p className="text-[10px] text-[var(--text-muted)]">{clocks.ist.dateLabel}</p>
               </div>
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 min-w-[148px]">
-                <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-                  <span>New York</span>
+
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 flex flex-col items-center text-center min-w-[144px]">
+                <div className="flex items-center justify-between w-full text-[10px] text-[var(--text-muted)] mb-1.5">
+                  <span className="font-semibold text-[var(--text-secondary)]">New York</span>
                   <span>{clocks.ny.offsetLabel.split(' ')[0]}</span>
                 </div>
-                <p className="mt-1 font-mono-num text-xl sm:text-2xl font-bold text-[var(--text-primary)] tracking-tight">
-                  {clocks.ny.formatted24}
+                <AnalogDial
+                  clock={clocks.ny}
+                  styleId={settings.clockStyle}
+                  sizeClass="w-24 h-24 sm:w-28 sm:h-28"
+                />
+                <p className="mt-1.5 font-mono-num text-[11px] font-semibold text-[var(--text-primary)] whitespace-nowrap">
+                  {clocks.ny.formatted12} {clocks.ny.ampm}
                 </p>
-                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{clocks.ny.dateLabel}</p>
+                <p className="text-[10px] text-[var(--text-muted)]">{clocks.ny.dateLabel}</p>
               </div>
             </div>
           )}

@@ -4,14 +4,20 @@ export type TabId =
   | 'journal'
   | 'lotsize'
   | 'sessions'
-  | 'roi'
-  | 'guard';
+  | 'roi';
 
 export type ThemeId = 'dark' | 'light' | 'monochrome' | 'bw';
-export type FontId = 'inter' | 'ubuntu' | 'ios' | 'comfortaa' | 'mono';
+export type FontId = 'inter' | 'google-sans' | 'play' | 'ubuntu' | 'ios' | 'comfortaa' | 'mono';
 export type ClockStyleId = 'roman' | 'modern' | 'neon' | 'digital';
 export type CurrencyId = 'USD' | 'INR';
 export type DstMode = 'auto' | 'winter' | 'summer';
+export type CursorEffectId =
+  | 'aurora-grid'
+  | 'spotlight'
+  | 'crosshair'
+  | 'particles'
+  | 'magnetic-rings'
+  | 'none';
 export type WallpaperPresetId =
   | 'none'
   | 'aurora'
@@ -48,6 +54,7 @@ export const PLAYBOOK_SETUPS: readonly PlaybookSetup[] = [
 ] as const;
 
 export type TradeSide = 'Long' | 'Short';
+export type TradeStatus = 'open' | 'closed';
 export type MentalState = 'Focused' | 'Calm' | 'Anxious' | 'Overconfident' | 'Revenge';
 
 export const MENTAL_STATES: readonly MentalState[] = [
@@ -65,6 +72,7 @@ export interface Trade {
   symbol: string;
   side: TradeSide;
   setup: PlaybookSetup;
+  status?: TradeStatus;
   rMultiple: number;
   netPnl: number;
   mentalState: MentalState;
@@ -123,7 +131,6 @@ export interface AppSettings {
   traderName: string;
   theme: ThemeId;
   font: FontId;
-  fontColor: string; // '' = Theme Default, or '#rrggbb'
   clockStyle: ClockStyleId;
   currency: CurrencyId;
   dstMode: DstMode;
@@ -131,6 +138,7 @@ export interface AppSettings {
   glassNav: boolean;
   bgGradient: boolean;
   cursorAnimation: boolean;
+  cursorEffect: CursorEffectId;
   liveClocksOverview: boolean;
   breachGuardrail: boolean;
   compactAccounts: boolean;
@@ -138,6 +146,7 @@ export interface AppSettings {
   wallpaperPreset: WallpaperPresetId;
   wallpaperDim: number; // 0 - 85 (%)
   wallpaperBlur: number; // 0 - 20 (px)
+  windowOpacity: number; // 15 - 100 (%)
 }
 
 export interface AccountMetrics {

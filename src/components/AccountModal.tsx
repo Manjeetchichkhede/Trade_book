@@ -19,17 +19,17 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   onClose,
   onSave,
 }) => {
-  const [firm, setFirm] = useState('FTMO');
+  const [firm, setFirm] = useState('');
   const [name, setName] = useState('');
   const [stage, setStage] = useState<AccountStage>('Funded');
-  const [startingBalance, setStartingBalance] = useState('100000');
+  const [startingBalance, setStartingBalance] = useState('');
   const [drawdownType, setDrawdownType] = useState<DrawdownType>('EOD Trailing');
-  const [dailyLossLimit, setDailyLossLimit] = useState('5000');
-  const [maxDrawdown, setMaxDrawdown] = useState('10000');
-  const [profitTarget, setProfitTarget] = useState('8000');
-  const [minTradingDays, setMinTradingDays] = useState('5');
-  const [consistencyCapPct, setConsistencyCapPct] = useState('30');
-  const [evalFee, setEvalFee] = useState('540');
+  const [dailyLossLimit, setDailyLossLimit] = useState('');
+  const [maxDrawdown, setMaxDrawdown] = useState('');
+  const [profitTarget, setProfitTarget] = useState('');
+  const [minTradingDays, setMinTradingDays] = useState('0');
+  const [consistencyCapPct, setConsistencyCapPct] = useState('0');
+  const [evalFee, setEvalFee] = useState('0');
 
   useEffect(() => {
     if (!open) return;
@@ -46,17 +46,17 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       setConsistencyCapPct(String(editingAccount.consistencyCapPct));
       setEvalFee(String(editingAccount.evalFee));
     } else {
-      setFirm('FTMO');
+      setFirm('');
       setName('');
       setStage('Eval Phase 1');
-      setStartingBalance('50000');
+      setStartingBalance('');
       setDrawdownType('EOD Trailing');
-      setDailyLossLimit('2500');
-      setMaxDrawdown('5000');
-      setProfitTarget('4000');
-      setMinTradingDays('5');
-      setConsistencyCapPct('30');
-      setEvalFee('299');
+      setDailyLossLimit('');
+      setMaxDrawdown('');
+      setProfitTarget('');
+      setMinTradingDays('0');
+      setConsistencyCapPct('0');
+      setEvalFee('0');
     }
   }, [open, editingAccount]);
 
@@ -64,20 +64,21 @@ export const AccountModal: React.FC<AccountModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const bal = Math.max(1000, Number(startingBalance) || 50000);
+    const bal = Math.max(0, Number(startingBalance) || 0);
     const acc: PropAccount = {
       id: editingAccount ? editingAccount.id : generateId('acc'),
       firm: firm.trim() || 'Prop Firm',
-      name: name.trim() || `${firm.trim() || 'Prop'} ${(bal / 1000).toFixed(0)}K ${stage}`,
+      name:
+        name.trim() ||
+        `${firm.trim() || 'Prop'} ${bal >= 1000 ? `${(bal / 1000).toFixed(0)}K` : `$${bal}`} ${stage}`,
       stage,
       startingBalance: bal,
       drawdownType,
-      dailyLossLimit: Math.max(50, Number(dailyLossLimit) || bal * 0.05),
-      maxDrawdown: Math.max(100, Number(maxDrawdown) || bal * 0.1),
-      profitTarget:
-        stage === 'Funded' ? undefined : Math.max(100, Number(profitTarget) || bal * 0.08),
-      minTradingDays: Math.max(1, Number(minTradingDays) || 5),
-      consistencyCapPct: Math.max(5, Math.min(100, Number(consistencyCapPct) || 30)),
+      dailyLossLimit: Math.max(0, Number(dailyLossLimit) || 0),
+      maxDrawdown: Math.max(0, Number(maxDrawdown) || 0),
+      profitTarget: stage === 'Funded' ? undefined : Math.max(0, Number(profitTarget) || 0),
+      minTradingDays: Math.max(0, Number(minTradingDays) || 0),
+      consistencyCapPct: Math.max(0, Math.min(100, Number(consistencyCapPct) || 0)),
       evalFee: Math.max(0, Number(evalFee) || 0),
       createdAt: editingAccount ? editingAccount.createdAt : getTodayISO(),
     };
@@ -183,8 +184,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               </label>
               <input
                 type="number"
-                min="1000"
-                step="100"
+                min="0"
+                step="any"
+                placeholder="0"
                 required
                 value={startingBalance}
                 onChange={(e) => setStartingBalance(e.target.value)}
@@ -197,8 +199,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               </label>
               <input
                 type="number"
-                min="50"
-                step="50"
+                min="0"
+                step="any"
+                placeholder="0"
                 required
                 value={dailyLossLimit}
                 onChange={(e) => setDailyLossLimit(e.target.value)}
@@ -211,8 +214,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               </label>
               <input
                 type="number"
-                min="100"
-                step="50"
+                min="0"
+                step="any"
+                placeholder="0"
                 required
                 value={maxDrawdown}
                 onChange={(e) => setMaxDrawdown(e.target.value)}
@@ -229,8 +233,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                 </label>
                 <input
                   type="number"
-                  min="100"
-                  step="50"
+                  min="0"
+                  step="any"
+                  placeholder="0"
                   value={profitTarget}
                   onChange={(e) => setProfitTarget(e.target.value)}
                   className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm"
@@ -243,8 +248,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               </label>
               <input
                 type="number"
-                min="1"
+                min="0"
                 max="30"
+                placeholder="0"
                 value={minTradingDays}
                 onChange={(e) => setMinTradingDays(e.target.value)}
                 className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm"
@@ -256,8 +262,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               </label>
               <input
                 type="number"
-                min="10"
+                min="0"
                 max="100"
+                placeholder="0"
                 value={consistencyCapPct}
                 onChange={(e) => setConsistencyCapPct(e.target.value)}
                 className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm"
@@ -270,7 +277,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               <input
                 type="number"
                 min="0"
-                step="1"
+                step="any"
+                placeholder="0"
                 value={evalFee}
                 onChange={(e) => setEvalFee(e.target.value)}
                 className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm"

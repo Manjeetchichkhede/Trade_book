@@ -1,25 +1,27 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle,
   Calendar as CalendarIcon,
   Camera,
+  CheckSquare,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  Clock,
   Download,
-  ImagePlus,
   List,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
-  ShieldAlert,
+  Square,
   Trash2,
   Upload,
-  X,
 } from 'lucide-react';
 import {
   AppSettings,
-  EconomicNewsEvent,
-  GuardrailConfig,
+  ChecklistItem,
+  ChecklistScope,
   MENTAL_STATES,
   MentalState,
   PLAYBOOK_SETUPS,
@@ -29,88 +31,65 @@ import {
   Trade,
   TradeSide,
 } from '../types';
-import { compressImageFile, saveImage } from '../db/storage';
-import { computeDrawdownImpact } from '../utils/calculations';
-import { evaluateNewsEvents, getActiveNewsAlert } from '../utils/guardrails';
 import { formatMoney, formatR, formatShortDate, generateId, getTodayISO } from '../utils/format';
 import { ChartLightboxModal } from './ChartLightboxModal';
-import { ChartAnnotatorModal } from './ChartAnnotatorModal';
 import { CsvImportModal } from './CsvImportModal';
+import { TradeUpdateModal } from './TradeUpdateModal';
 
 interface JournalTabProps {
   accounts: PropAccount[];
   trades: Trade[];
   settings: AppSettings;
-  newsEvents: EconomicNewsEvent[];
-  guardrailConfig: GuardrailConfig;
+  checklist: ChecklistItem[];
   preselectedAccountId?: string | null;
   onClearPreselectedAccount: () => void;
   onAddTrade: (trade: Trade) => void;
+  onUpdateTrade: (trade: Trade) => void;
   onBulkImportTrades: (imported: Trade[]) => void;
   onDeleteTrade: (tradeId: string) => void;
+  onUpdateChecklist: (next: ChecklistItem[]) => void;
   onNavigateTab: (tab: TabId) => void;
 }
 
 const SYMBOL_CHIPS = ['XAUUSD', 'NAS100', 'EURUSD', 'GBPUSD', 'US30', 'NQ', 'USDJPY', 'GBPJPY'];
-const PNL_PRESETS = [-500, -250, 400, 850];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const JournalTab: React.FC<JournalTabProps> = ({
   accounts,
   trades,
   settings,
-  newsEvents,
-  guardrailConfig,
+  checklist,
   preselectedAccountId,
   onClearPreselectedAccount,
   onAddTrade,
+  onUpdateTrade,
   onBulkImportTrades,
   onDeleteTrade,
+  onUpdateChecklist,
   onNavigateTab,
 }) => {
   const loggerRef = useRef<HTMLDivElement | null>(null);
 
-  // Live clock tick for economic news restriction countdowns
-  const [now, setNow] = useState<Date>(() => new Date());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  // Pre-Trade CISD Checklist state
+  const [checklistExpanded, setChecklistExpanded] = useState<boolean>(true);
+  const [setupFilter, setSetupFilter] = useState<ChecklistScope>('All');
+  const [newCheckLabel, setNewCheckLabel] = useState<string>('');
+  const [newCheckScope, setNewCheckScope] = useState<ChecklistScope>('All');
 
-  const activeNewsAlert = useMemo(() => {
-    if (!guardrailConfig.enableNewsWarnings) return null;
-    const evaluated = evaluateNewsEvents(
-      newsEvents,
-      now,
-      settings.dstMode,
-      guardrailConfig.newsBufferMinutes
-    );
-    return getActiveNewsAlert(evaluated);
-  }, [
-    newsEvents,
-    now,
-    settings.dstMode,
-    guardrailConfig.enableNewsWarnings,
-    guardrailConfig.newsBufferMinutes,
-  ]);
-
-  // Quick Trade Logger form state
-  const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? '');
+  // Quick Trade Logger form state (fast entry: P&L and Screenshots added post-trade via TradeUpdateModal)
+  const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? 'general');
   const [date, setDate] = useState<string>(getTodayISO());
   const [symbol, setSymbol] = useState<string>('XAUUSD');
   const [side, setSide] = useState<TradeSide>('Long');
   const [setup, setSetup] = useState<PlaybookSetup>('Liquidity Sweep + CISD + BB');
-  const [rMultiple, setRMultiple] = useState<string>('2.0');
-  const [netPnl, setNetPnl] = useState<string>('400');
   const [mentalState, setMentalState] = useState<MentalState>('Focused');
   const [ruleFollowed, setRuleFollowed] = useState<boolean>(true);
   const [note, setNote] = useState<string>('');
-  const [beforePreview, setBeforePreview] = useState<string | null>(null);
-  const [afterPreview, setAfterPreview] = useState<string | null>(null);
-  const [annotatingPreview, setAnnotatingPreview] = useState<'before' | 'after' | null>(null);
-  const [guardrailOverride, setGuardrailOverride] = useState<boolean>(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [csvImportOpen, setCsvImportOpen] = useState<boolean>(false);
+
+  // Post-trade outcome & chart update modal state
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
 
   // Calendar / List View state
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
@@ -133,62 +112,67 @@ export const JournalTab: React.FC<JournalTabProps> = ({
       setAccountId(preselectedAccountId);
       onClearPreselectedAccount();
       loggerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else if (!accountId && accounts[0]) {
+    } else if (
+      accounts.length > 0 &&
+      (!accountId || accountId === 'general' || !accounts.some((a) => a.id === accountId))
+    ) {
       setAccountId(accounts[0].id);
+    } else if (accounts.length === 0 && accountId !== 'general') {
+      setAccountId('general');
     }
   }, [preselectedAccountId, accounts, accountId, onClearPreselectedAccount]);
 
-  const selectedAccount = useMemo(
-    () => accounts.find((a) => a.id === accountId),
-    [accounts, accountId]
+  // Checklist calculations
+  const visibleChecklist = useMemo(
+    () =>
+      checklist.filter(
+        (item) =>
+          setupFilter === 'All' || item.setupScope === 'All' || item.setupScope === setupFilter
+      ),
+    [checklist, setupFilter]
   );
 
-  const parsedPnl = Number(netPnl) || 0;
-  const drawdownPreview = useMemo(
-    () => computeDrawdownImpact(selectedAccount, trades, date, parsedPnl),
-    [selectedAccount, trades, date, parsedPnl]
-  );
+  const requiredItems = visibleChecklist.filter((i) => i.required);
+  const checkedRequired = requiredItems.filter((i) => i.checked).length;
+  const checklistPct =
+    requiredItems.length > 0 ? Math.round((checkedRequired / requiredItems.length) * 100) : 100;
+  const checklistReady = requiredItems.length > 0 && checkedRequired === requiredItems.length;
 
-  useEffect(() => {
-    setGuardrailOverride(false);
-  }, [accountId, date, netPnl]);
-
-  const handleImageUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    slot: 'before' | 'after'
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const dataUrl = await compressImageFile(file);
-      if (slot === 'before') setBeforePreview(dataUrl);
-      else setAfterPreview(dataUrl);
-    } catch {
-      // Ignore invalid image
-    }
-    e.target.value = '';
+  const handleToggleCheck = (id: string) => {
+    onUpdateChecklist(
+      checklist.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item))
+    );
   };
 
-  const handleLogTrade = async (e: React.FormEvent) => {
+  const handleAddCheckItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = newCheckLabel.trim();
+    if (!cleaned) return;
+    onUpdateChecklist([
+      ...checklist,
+      {
+        id: generateId('chk'),
+        label: cleaned,
+        setupScope: newCheckScope,
+        required: true,
+        checked: false,
+      },
+    ]);
+    setNewCheckLabel('');
+  };
+
+  const handleDeleteCheckItem = (id: string) => {
+    onUpdateChecklist(checklist.filter((item) => item.id !== id));
+  };
+
+  const handleResetChecks = () => {
+    onUpdateChecklist(checklist.map((item) => ({ ...item, checked: false })));
+  };
+
+  // Fast open-trade logging (P&L + Screenshots added once TP/SL hits)
+  const handleLogTrade = (e: React.FormEvent) => {
     e.preventDefault();
     if (!accountId) return;
-
-    if (settings.breachGuardrail && drawdownPreview?.anyBreach && !guardrailOverride) {
-      setGuardrailOverride(true);
-      return;
-    }
-
-    let beforeChartId: string | undefined;
-    let afterChartId: string | undefined;
-
-    if (beforePreview) {
-      beforeChartId = generateId('img_b');
-      await saveImage(beforeChartId, beforePreview);
-    }
-    if (afterPreview) {
-      afterChartId = generateId('img_a');
-      await saveImage(afterChartId, afterPreview);
-    }
 
     const newTrade: Trade = {
       id: generateId('tr'),
@@ -197,25 +181,32 @@ export const JournalTab: React.FC<JournalTabProps> = ({
       symbol: symbol.trim().toUpperCase() || 'XAUUSD',
       side,
       setup,
-      rMultiple: Number(rMultiple) || 0,
-      netPnl: parsedPnl,
+      status: 'open',
+      rMultiple: 0,
+      netPnl: 0,
       mentalState,
       ruleFollowed,
       note: note.trim(),
-      beforeChartId,
-      afterChartId,
       createdAt: new Date().toISOString(),
     };
 
     onAddTrade(newTrade);
     setNote('');
-    setBeforePreview(null);
-    setAfterPreview(null);
-    setGuardrailOverride(false);
     setSelectedCalDate(date);
-    setSaveFeedback(`Logged ${newTrade.symbol} ${newTrade.side} (${formatR(newTrade.rMultiple)})`);
-    window.setTimeout(() => setSaveFeedback(null), 3000);
+    setSaveFeedback(
+      `Logged ${newTrade.symbol} ${newTrade.side} as Open — update P&L & charts once TP/SL hits.`
+    );
+    window.setTimeout(() => setSaveFeedback(null), 4000);
   };
+
+  // Active Open Trades awaiting TP/SL outcome
+  const openTrades = useMemo(
+    () =>
+      trades
+        .filter((t) => t.status === 'open')
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [trades]
+  );
 
   // Monthly Calendar computation
   const monthPrefix = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
@@ -224,7 +215,10 @@ export const JournalTab: React.FC<JournalTabProps> = ({
     [trades, monthPrefix]
   );
   const monthNetPnl = useMemo(
-    () => monthTrades.reduce((s, t) => s + t.netPnl, 0),
+    () =>
+      monthTrades
+        .filter((t) => t.status !== 'open')
+        .reduce((s, t) => s + t.netPnl, 0),
     [monthTrades]
   );
 
@@ -286,6 +280,7 @@ export const JournalTab: React.FC<JournalTabProps> = ({
   const handleExportCsv = () => {
     const header = [
       'Date',
+      'Status',
       'Account',
       'Symbol',
       'Side',
@@ -299,6 +294,7 @@ export const JournalTab: React.FC<JournalTabProps> = ({
     const accLookup = new Map(accounts.map((a) => [a.id, a.name]));
     const rows = filteredTrades.map((t) => [
       t.date,
+      t.status === 'open' ? 'Open' : 'Closed',
       `"${(accLookup.get(t.accountId) ?? t.accountId).replace(/"/g, '""')}"`,
       t.symbol,
       t.side,
@@ -323,163 +319,336 @@ export const JournalTab: React.FC<JournalTabProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Quick Trade Logger */}
-      <section ref={loggerRef} className="tb-glass rounded-2xl p-5 sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[var(--border-subtle)]">
-          <div>
-            <h1 className="text-lg font-semibold text-[var(--text-primary)]">Quick Trade Logger</h1>
-            <p className="text-xs text-[var(--text-muted)]">
-              Log CISD executions with live prop-firm drawdown impact and Before/After chart proof.
-            </p>
-          </div>
-          {saveFeedback && (
-            <span className="text-xs font-semibold" style={{ color: 'var(--positive)' }}>
-              {saveFeedback}
-            </span>
-          )}
-        </div>
-
-        {/* Active High-Impact News Warning Banner */}
-        {activeNewsAlert && (
-          <div
-            className={`mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${
-              activeNewsAlert.level === 'restricted'
-                ? 'border-rose-500/45 bg-rose-500/12'
-                : 'border-amber-500/40 bg-amber-500/12'
-            }`}
-          >
-            <div className="flex items-center gap-2 text-xs">
-              <AlertTriangle
-                className={`w-4 h-4 shrink-0 ${
-                  activeNewsAlert.level === 'restricted' ? 'text-rose-400' : 'text-amber-400'
-                }`}
-              />
-              <span className="text-[var(--text-primary)]">
-                <strong>
-                  {activeNewsAlert.level === 'restricted'
-                    ? 'Prop News Restriction Active:'
-                    : 'High-Impact News Approaching:'}
-                </strong>{' '}
-                {activeNewsAlert.event.event.currency} {activeNewsAlert.event.event.title} (
-                {activeNewsAlert.event.istTimeLabel} · {activeNewsAlert.event.countdownText})
-              </span>
-            </div>
+      {/* Top Row: Pre-Trade CISD Checklist (Left) + Quick Trade Logger (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left: Pre-Trade CISD Checklist */}
+        <section className="tb-glass lg:col-span-5 rounded-2xl p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
             <button
               type="button"
-              onClick={() => onNavigateTab('guard')}
-              className="text-xs font-semibold text-[var(--accent-text)] hover:underline cursor-pointer whitespace-nowrap"
+              onClick={() => setChecklistExpanded((prev) => !prev)}
+              className="flex items-center gap-3 text-left cursor-pointer group min-w-0 flex-1"
             >
-              View Calendar →
-            </button>
-          </div>
-        )}
-
-        <form onSubmit={handleLogTrade} className="mt-5 space-y-5">
-          {/* Row 1: Account, Date, Symbol, Side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                Account
-              </label>
-              <select
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                required
-                className="tb-input w-full rounded-xl px-3.5 py-2.5 text-sm"
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0"
+                style={{
+                  backgroundColor: checklistReady ? 'var(--positive-soft)' : 'var(--accent-soft)',
+                  color: checklistReady ? 'var(--positive)' : 'var(--accent-text)',
+                }}
               >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                Trade Date
-              </label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                Symbol
-              </label>
-              <input
-                type="text"
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                required
-                placeholder="XAUUSD"
-                className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm uppercase"
-              />
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {SYMBOL_CHIPS.slice(0, 5).map((sym) => (
-                  <button
-                    key={sym}
-                    type="button"
-                    onClick={() => setSymbol(sym)}
-                    className="rounded-md px-1.5 py-0.5 text-[10px] font-mono-num transition-colors cursor-pointer"
-                    style={{
-                      backgroundColor:
-                        symbol === sym ? 'var(--accent-soft)' : 'var(--bg-elevated)',
-                      color: symbol === sym ? 'var(--accent-text)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {sym}
-                  </button>
-                ))}
+                <CheckSquare className="w-4 h-4" />
               </div>
-            </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                    Pre-Trade Checklist
+                  </h2>
+                  <span
+                    className="font-mono-num text-xs font-bold"
+                    style={{ color: checklistReady ? 'var(--positive)' : 'var(--accent-text)' }}
+                  >
+                    {checkedRequired}/{requiredItems.length} ({checklistPct}%)
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Verify CISD confluence before entering. Auto-resets daily.
+                </p>
+              </div>
+            </button>
 
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                Side
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['Long', 'Short'] as TradeSide[]).map((s) => {
-                  const active = side === s;
-                  const isLong = s === 'Long';
+            <div className="flex items-center gap-1.5 shrink-0">
+              {checklistExpanded && (
+                <button
+                  type="button"
+                  onClick={handleResetChecks}
+                  className="tb-btn-ghost inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Reset
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setChecklistExpanded((prev) => !prev)}
+                aria-label={checklistExpanded ? 'Collapse checklist' : 'Expand checklist'}
+                className="tb-btn-ghost p-2 rounded-xl cursor-pointer"
+              >
+                {checklistExpanded ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Readiness Progress Bar */}
+          <div className="mt-3.5 h-1.5 w-full rounded-full bg-[var(--bg-elevated)] overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-300"
+              style={{
+                width: `${checklistPct}%`,
+                backgroundColor: checklistReady ? 'var(--positive)' : 'var(--accent)',
+              }}
+            />
+          </div>
+
+          {checklistExpanded && (
+            <div className="mt-4 space-y-3.5">
+              {/* Setup Scope Filter */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(['All', ...PLAYBOOK_SETUPS] as ChecklistScope[]).map((scope) => {
+                  const active = setupFilter === scope;
                   return (
                     <button
-                      key={s}
+                      key={scope}
                       type="button"
-                      onClick={() => setSide(s)}
-                      className="rounded-xl py-2.5 text-sm font-semibold transition-all cursor-pointer"
+                      onClick={() => setSetupFilter(scope)}
+                      className="rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer whitespace-nowrap"
                       style={{
-                        backgroundColor: active
-                          ? isLong
-                            ? 'var(--positive-soft)'
-                            : 'var(--negative-soft)'
-                          : 'var(--bg-input)',
+                        backgroundColor: active ? 'var(--nav-pill)' : 'var(--bg-input)',
+                        color: active ? 'var(--nav-pill-text)' : 'var(--text-secondary)',
                         border: active
-                          ? `1px solid ${isLong ? 'var(--positive)' : 'var(--negative)'}`
+                          ? '1px solid transparent'
                           : '1px solid var(--border-subtle)',
-                        color: active
-                          ? isLong
-                            ? 'var(--positive)'
-                            : 'var(--negative)'
-                          : 'var(--text-secondary)',
                       }}
                     >
-                      {s}
+                      {scope}
                     </button>
                   );
                 })}
               </div>
+
+              {/* Checklist Rules */}
+              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-0.5">
+                {visibleChecklist.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2.5 transition-colors hover:border-[var(--border-strong)]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCheck(item.id)}
+                      className="flex flex-1 items-center gap-2.5 text-left cursor-pointer min-w-0"
+                    >
+                      {item.checked ? (
+                        <CheckSquare
+                          className="w-4 h-4 shrink-0"
+                          style={{ color: 'var(--positive)' }}
+                        />
+                      ) : (
+                        <Square className="w-4 h-4 shrink-0 text-[var(--text-muted)]" />
+                      )}
+                      <div className="min-w-0">
+                        <span
+                          className={`block text-xs leading-snug ${
+                            item.checked
+                              ? 'line-through text-[var(--text-muted)]'
+                              : 'text-[var(--text-primary)]'
+                          }`}
+                        >
+                          {item.label}
+                        </span>
+                        {item.setupScope !== 'All' && (
+                          <span className="text-[10px] text-[var(--accent-text)]">
+                            {item.setupScope}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCheckItem(item.id)}
+                      aria-label="Remove checklist rule"
+                      className="p-1 rounded-md text-[var(--text-muted)] hover:text-rose-400 cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add Custom Checklist Rule */}
+              <form
+                onSubmit={handleAddCheckItem}
+                className="pt-3 border-t border-[var(--border-subtle)] space-y-2"
+              >
+                <input
+                  type="text"
+                  value={newCheckLabel}
+                  onChange={(e) => setNewCheckLabel(e.target.value)}
+                  placeholder="Add custom pre-trade rule..."
+                  className="tb-input w-full rounded-xl px-3 py-2 text-xs"
+                />
+                <div className="flex items-center gap-2">
+                  <select
+                    value={newCheckScope}
+                    onChange={(e) => setNewCheckScope(e.target.value as ChecklistScope)}
+                    className="tb-input flex-1 rounded-xl px-3 py-2 text-xs"
+                  >
+                    <option value="All">All Setups</option>
+                    {PLAYBOOK_SETUPS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="tb-btn-primary inline-flex items-center justify-center gap-1 rounded-xl px-3.5 py-2 text-xs font-semibold cursor-pointer whitespace-nowrap"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Rule
+                  </button>
+                </div>
+              </form>
             </div>
+          )}
+        </section>
+
+        {/* Right: Quick Trade Logger (Fast Entry — P&L & Charts updated after TP/SL) */}
+        <section ref={loggerRef} className="tb-glass lg:col-span-7 rounded-2xl p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-[var(--border-subtle)]">
+            <div>
+              <h1 className="text-lg font-semibold text-[var(--text-primary)]">
+                Quick Trade Logger
+              </h1>
+              <p className="text-xs text-[var(--text-muted)]">
+                Log entry quickly. Add Net P&amp;L, R-Multiple, and screenshots inside the logged
+                trade once TP or SL hits.
+              </p>
+            </div>
+            {saveFeedback && (
+              <span className="text-xs font-semibold" style={{ color: 'var(--positive)' }}>
+                {saveFeedback}
+              </span>
+            )}
           </div>
 
-          {/* Row 2: Playbook Setup (EXACT 2 options), R-Multiple, Net P&L + Presets */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-5">
+          <form onSubmit={handleLogTrade} className="mt-4 space-y-4">
+            {/* Row 1: Account & Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-medium text-[var(--text-secondary)]">
+                    Account
+                  </label>
+                  {accounts.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateTab('accounts')}
+                      className="text-[11px] font-semibold text-[var(--accent-text)] hover:underline cursor-pointer"
+                    >
+                      + Add Account
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  required
+                  className="tb-input w-full rounded-xl px-3.5 py-2.5 text-sm"
+                >
+                  {accounts.length === 0 ? (
+                    <option value="general">General / Unlinked Account</option>
+                  ) : (
+                    accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Trade Date
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                  className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Row 2: Symbol & Side */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Symbol
+                </label>
+                <input
+                  type="text"
+                  value={symbol}
+                  onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                  required
+                  placeholder="XAUUSD"
+                  className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm uppercase"
+                />
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {SYMBOL_CHIPS.slice(0, 6).map((sym) => (
+                    <button
+                      key={sym}
+                      type="button"
+                      onClick={() => setSymbol(sym)}
+                      className="rounded-md px-1.5 py-0.5 text-[10px] font-mono-num transition-colors cursor-pointer"
+                      style={{
+                        backgroundColor:
+                          symbol === sym ? 'var(--accent-soft)' : 'var(--bg-elevated)',
+                        color: symbol === sym ? 'var(--accent-text)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {sym}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Side
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['Long', 'Short'] as TradeSide[]).map((s) => {
+                    const active = side === s;
+                    const isLong = s === 'Long';
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setSide(s)}
+                        className="rounded-xl py-2.5 text-sm font-semibold transition-all cursor-pointer"
+                        style={{
+                          backgroundColor: active
+                            ? isLong
+                              ? 'var(--positive-soft)'
+                              : 'var(--negative-soft)'
+                            : 'var(--bg-input)',
+                          border: active
+                            ? `1px solid ${isLong ? 'var(--positive)' : 'var(--negative)'}`
+                            : '1px solid var(--border-subtle)',
+                          color: active
+                            ? isLong
+                              ? 'var(--positive)'
+                              : 'var(--negative)'
+                            : 'var(--text-secondary)',
+                        }}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Row 3: Playbook Setup (EXACT 2 options) */}
+            <div>
               <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
                 Playbook Setup
               </label>
@@ -507,287 +676,167 @@ export const JournalTab: React.FC<JournalTabProps> = ({
               </div>
             </div>
 
-            <div className="lg:col-span-2">
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                R-Multiple
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                value={rMultiple}
-                onChange={(e) => setRMultiple(e.target.value)}
-                required
-                className="tb-input font-mono-num w-full rounded-xl px-3.5 py-2.5 text-sm"
-              />
-            </div>
-
-            <div className="lg:col-span-5">
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                Net P&amp;L (USD)
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="number"
-                  step="1"
-                  value={netPnl}
-                  onChange={(e) => setNetPnl(e.target.value)}
-                  required
-                  className="tb-input font-mono-num flex-1 min-w-[110px] rounded-xl px-3.5 py-2.5 text-sm"
-                />
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {PNL_PRESETS.map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => {
-                        setNetPnl(String(val));
-                        setRMultiple(val < 0 ? (val === -500 ? '-1.0' : '-0.5') : val === 400 ? '1.6' : '2.5');
-                      }}
-                      className="rounded-lg px-2.5 py-2 text-xs font-mono-num font-semibold transition-colors cursor-pointer whitespace-nowrap"
-                      style={{
-                        backgroundColor:
-                          val >= 0 ? 'var(--positive-soft)' : 'var(--negative-soft)',
-                        color: val >= 0 ? 'var(--positive)' : 'var(--negative)',
-                      }}
-                    >
-                      {val > 0 ? `+$${val}` : `-$${Math.abs(val)}`}
-                    </button>
-                  ))}
+            {/* Row 4: Mental State & Rule Followed */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 items-start">
+              <div className="sm:col-span-7">
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Mental State
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {MENTAL_STATES.map((ms) => {
+                    const active = mentalState === ms;
+                    return (
+                      <button
+                        key={ms}
+                        type="button"
+                        onClick={() => setMentalState(ms)}
+                        className="rounded-lg px-2.5 py-2 text-xs font-medium transition-all cursor-pointer whitespace-nowrap"
+                        style={{
+                          backgroundColor: active ? 'var(--accent-soft)' : 'var(--bg-input)',
+                          border: active
+                            ? '1px solid var(--accent)'
+                            : '1px solid var(--border-subtle)',
+                          color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+                        }}
+                      >
+                        {ms}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Row 3: Mental State, Rule Followed, Execution Note */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-5">
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                Mental State
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {MENTAL_STATES.map((ms) => {
-                  const active = mentalState === ms;
-                  return (
-                    <button
-                      key={ms}
-                      type="button"
-                      onClick={() => setMentalState(ms)}
-                      className="rounded-lg px-3 py-2 text-xs font-medium transition-all cursor-pointer whitespace-nowrap"
-                      style={{
-                        backgroundColor: active ? 'var(--accent-soft)' : 'var(--bg-input)',
-                        border: active
-                          ? '1px solid var(--accent)'
-                          : '1px solid var(--border-subtle)',
-                        color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
-                      }}
-                    >
-                      {ms}
-                    </button>
-                  );
-                })}
+              <div className="sm:col-span-5">
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Rule Followed
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setRuleFollowed((prev) => !prev)}
+                  className="w-full flex items-center justify-between rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer"
+                  style={{
+                    backgroundColor: ruleFollowed
+                      ? 'var(--positive-soft)'
+                      : 'var(--negative-soft)',
+                    border: `1px solid ${ruleFollowed ? 'var(--positive)' : 'var(--negative)'}`,
+                    color: ruleFollowed ? 'var(--positive)' : 'var(--negative)',
+                  }}
+                >
+                  <span>{ruleFollowed ? 'Yes — Followed' : 'No — Broken'}</span>
+                  <span className="font-mono-num">{ruleFollowed ? 'ON' : 'OFF'}</span>
+                </button>
               </div>
             </div>
 
-            <div className="lg:col-span-3">
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                Rule Followed
-              </label>
-              <button
-                type="button"
-                onClick={() => setRuleFollowed((prev) => !prev)}
-                className="w-full flex items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-semibold transition-all cursor-pointer"
-                style={{
-                  backgroundColor: ruleFollowed
-                    ? 'var(--positive-soft)'
-                    : 'var(--negative-soft)',
-                  border: `1px solid ${ruleFollowed ? 'var(--positive)' : 'var(--negative)'}`,
-                  color: ruleFollowed ? 'var(--positive)' : 'var(--negative)',
-                }}
-              >
-                <span>{ruleFollowed ? 'Yes — Strictly Followed' : 'No — Rule Broken'}</span>
-                <span className="font-mono-num">{ruleFollowed ? 'ON' : 'OFF'}</span>
-              </button>
-            </div>
+            {/* Row 5: Execution Note + Fast Log Action */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 items-end">
+              <div className="sm:col-span-7">
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                  Entry Note (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="CISD confirmation, sweep level, TP/SL plan..."
+                  className="tb-input w-full rounded-xl px-3.5 py-2.5 text-sm"
+                />
+              </div>
 
-            <div className="lg:col-span-4">
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-                Execution Note
-              </label>
-              <input
-                type="text"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="CISD confirmation, sweep level, management notes..."
-                className="tb-input w-full rounded-xl px-3.5 py-2.5 text-sm"
-              />
+              <div className="sm:col-span-5">
+                <button
+                  type="submit"
+                  className="tb-btn-primary w-full inline-flex items-center justify-center gap-2 rounded-xl py-2.5 px-4 text-sm font-semibold cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  Log Open Trade
+                </button>
+              </div>
             </div>
+          </form>
+        </section>
+      </div>
+
+      {/* Active Open Trades awaiting TP / SL update */}
+      {openTrades.length > 0 && (
+        <section className="tb-glass rounded-2xl p-5 sm:p-6 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-[var(--warning)]" />
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                Open Trades Awaiting Outcome ({openTrades.length})
+              </h2>
+            </div>
+            <span className="text-[11px] text-[var(--text-muted)]">
+              Click &ldquo;Update P&amp;L &amp; Charts&rdquo; once TP or SL hits
+            </span>
           </div>
 
-          {/* Row 4: Before & After Chart Screenshots + Live Drawdown Impact Preview */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-            {/* Before & After Chart Slots */}
-            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {(
-                [
-                  { slot: 'before' as const, label: 'Before Chart', preview: beforePreview },
-                  { slot: 'after' as const, label: 'After Chart', preview: afterPreview },
-                ] as const
-              ).map(({ slot, label, preview }) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {openTrades.map((t) => {
+              const acc = accountLookup.get(t.accountId);
+              return (
                 <div
-                  key={slot}
-                  className="rounded-xl border border-dashed border-[var(--border-strong)] bg-[var(--bg-input)] p-3 flex flex-col justify-between"
+                  key={t.id}
+                  className="rounded-xl border border-[var(--border-strong)] bg-[var(--bg-input)] p-3.5 flex flex-col justify-between gap-3"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                      {label}
-                    </span>
-                    {preview && (
-                      <div className="flex items-center gap-2.5">
-                        <button
-                          type="button"
-                          onClick={() => setAnnotatingPreview(slot)}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono-num text-sm font-bold text-[var(--text-primary)]">
+                          {t.symbol}
+                        </span>
+                        <span
+                          className="text-xs font-semibold"
+                          style={{
+                            color: t.side === 'Long' ? 'var(--positive)' : 'var(--negative)',
+                          }}
                         >
-                          <Pencil className="w-3 h-3" /> Annotate
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            slot === 'before' ? setBeforePreview(null) : setAfterPreview(null)
-                          }
-                          className="inline-flex items-center gap-1 text-[11px] text-rose-400 hover:underline cursor-pointer"
-                        >
-                          <X className="w-3 h-3" /> Clear
-                        </button>
+                          {t.side}
+                        </span>
                       </div>
+                      <span
+                        className="font-mono-num text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
+                        style={{
+                          backgroundColor: 'var(--warning-soft)',
+                          color: 'var(--warning)',
+                        }}
+                      >
+                        OPEN
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      {formatShortDate(t.date)} · {t.setup} · {acc?.name ?? 'General Account'}
+                    </p>
+                    {t.note && (
+                      <p className="text-xs text-[var(--text-secondary)] line-clamp-2">{t.note}</p>
                     )}
                   </div>
-                  {preview ? (
-                    <img
-                      src={preview}
-                      alt={`${label} preview`}
-                      className="h-24 w-full rounded-lg object-cover border border-[var(--border-subtle)]"
-                    />
-                  ) : (
-                    <label className="flex h-24 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition-colors">
-                      <ImagePlus className="w-5 h-5 text-[var(--text-muted)]" />
-                      <span className="text-xs text-[var(--text-muted)]">
-                        Upload {label} (PNG/JPG)
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => handleImageUpload(e, slot)}
-                      />
-                    </label>
-                  )}
-                </div>
-              ))}
-            </div>
 
-            {/* Live Drawdown Impact Preview */}
-            <div className="lg:col-span-5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-4 flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-[var(--text-primary)]">
-                  Live Drawdown Impact Preview
-                </span>
-                <span className="text-[11px] text-[var(--text-muted)] truncate max-w-[160px]">
-                  {selectedAccount?.name ?? 'Select account'}
-                </span>
-              </div>
-
-              {drawdownPreview ? (
-                <div className="space-y-2.5">
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <span className="block text-[11px] text-[var(--text-muted)]">Projected Bal</span>
-                      <span className="font-mono-num font-semibold text-[var(--text-primary)]">
-                        {formatMoney(
-                          drawdownPreview.projectedEquity,
-                          settings.currency,
-                          settings.privacyMode,
-                          { decimals: 0 }
-                        )}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[11px] text-[var(--text-muted)]">Daily Buffer</span>
-                      <span
-                        className="font-mono-num font-semibold"
-                        style={{
-                          color: drawdownPreview.dailyBreached
-                            ? 'var(--negative)'
-                            : 'var(--positive)',
-                        }}
-                      >
-                        {formatMoney(
-                          drawdownPreview.projectedDailyBuffer,
-                          settings.currency,
-                          settings.privacyMode,
-                          { decimals: 0 }
-                        )}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[11px] text-[var(--text-muted)]">Max DD Buffer</span>
-                      <span
-                        className="font-mono-num font-semibold"
-                        style={{
-                          color: drawdownPreview.maxDdBreached
-                            ? 'var(--negative)'
-                            : 'var(--positive)',
-                        }}
-                      >
-                        {formatMoney(
-                          drawdownPreview.projectedMaxDdBuffer,
-                          settings.currency,
-                          settings.privacyMode,
-                          { decimals: 0 }
-                        )}
-                      </span>
-                    </div>
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
+                    <button
+                      type="button"
+                      onClick={() => setEditingTrade(t)}
+                      className="tb-btn-primary flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold cursor-pointer"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Update P&amp;L &amp; Charts
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteTrade(t.id)}
+                      aria-label="Delete open trade"
+                      className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-
-                  {drawdownPreview.anyBreach && (
-                    <div className="flex items-start gap-2 rounded-lg border border-rose-500/45 bg-rose-500/12 p-2.5 text-xs text-rose-400">
-                      <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-                      <div>
-                        <strong>Rule Breach Warning:</strong> This trade breaches{' '}
-                        {drawdownPreview.dailyBreached && drawdownPreview.maxDdBreached
-                          ? 'both Daily Loss Limit and Max Drawdown'
-                          : drawdownPreview.dailyBreached
-                          ? 'the Daily Loss Limit'
-                          : 'the Max Drawdown floor'}
-                        .
-                      </div>
-                    </div>
-                  )}
                 </div>
-              ) : (
-                <p className="text-xs text-[var(--text-muted)]">Select an account to preview impact.</p>
-              )}
-
-              <button
-                type="submit"
-                className="tb-btn-primary mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold cursor-pointer"
-              >
-                {guardrailOverride ? (
-                  <>
-                    <AlertTriangle className="w-4 h-4" />
-                    Confirm &amp; Log Breaching Trade
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4" />
-                    Save Trade to Journal
-                  </>
-                )}
-              </button>
-            </div>
+              );
+            })}
           </div>
-        </form>
-      </section>
+        </section>
+      )}
 
       {/* Calendar & List Switcher Section */}
       <section className="tb-glass rounded-2xl p-5 sm:p-6 space-y-5">
@@ -897,19 +946,24 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                   }
                   const dayNum = Number(iso.slice(-2));
                   const dayList = dayMap.get(iso) ?? [];
-                  const dayPnl = dayList.reduce((s, t) => s + t.netPnl, 0);
+                  const closedDayList = dayList.filter((t) => t.status !== 'open');
+                  const openDayCount = dayList.length - closedDayList.length;
+                  const dayPnl = closedDayList.reduce((s, t) => s + t.netPnl, 0);
                   const hasCharts = dayList.some((t) => t.beforeChartId || t.afterChartId);
                   const isSelected = selectedCalDate === iso;
                   const isToday = iso === getTodayISO();
 
                   let bg = 'var(--bg-input)';
                   let border = 'var(--border-subtle)';
-                  if (dayList.length > 0) {
+                  if (closedDayList.length > 0) {
                     bg = dayPnl >= 0 ? 'var(--positive-soft)' : 'var(--negative-soft)';
                     border =
                       dayPnl >= 0
                         ? 'rgba(16, 185, 129, 0.35)'
                         : 'rgba(244, 63, 94, 0.35)';
+                  } else if (openDayCount > 0) {
+                    bg = 'var(--warning-soft)';
+                    border = 'rgba(245, 158, 11, 0.38)';
                   }
                   if (isSelected) {
                     border = 'var(--accent)';
@@ -938,15 +992,24 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                       </div>
                       {dayList.length > 0 && (
                         <div>
-                          <span
-                            className="block font-mono-num text-[11px] sm:text-xs font-bold leading-tight truncate"
-                            style={{ color: dayPnl >= 0 ? 'var(--positive)' : 'var(--negative)' }}
-                          >
-                            {formatMoney(dayPnl, settings.currency, settings.privacyMode, {
-                              signed: true,
-                              compact: true,
-                            })}
-                          </span>
+                          {closedDayList.length > 0 ? (
+                            <span
+                              className="block font-mono-num text-[11px] sm:text-xs font-bold leading-tight truncate"
+                              style={{ color: dayPnl >= 0 ? 'var(--positive)' : 'var(--negative)' }}
+                            >
+                              {formatMoney(dayPnl, settings.currency, settings.privacyMode, {
+                                signed: true,
+                                compact: true,
+                              })}
+                            </span>
+                          ) : (
+                            <span
+                              className="block font-mono-num text-[10px] font-bold uppercase leading-tight"
+                              style={{ color: 'var(--warning)' }}
+                            >
+                              {openDayCount} Open
+                            </span>
+                          )}
                           <span className="hidden sm:block text-[10px] text-[var(--text-muted)]">
                             {dayList.length} {dayList.length === 1 ? 'trade' : 'trades'}
                           </span>
@@ -991,87 +1054,114 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                   </p>
                 ) : (
                   <div className="mt-3 space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-                    {selectedDateTrades.map((t) => (
-                      <div
-                        key={t.id}
-                        className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card-solid)] p-3 space-y-1.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-mono-num text-sm font-bold text-[var(--text-primary)]">
-                              {t.symbol}
-                            </span>
-                            <span
-                              className="text-xs font-semibold"
-                              style={{
-                                color: t.side === 'Long' ? 'var(--positive)' : 'var(--negative)',
-                              }}
-                            >
-                              {t.side}
-                            </span>
+                    {selectedDateTrades.map((t) => {
+                      const isOpen = t.status === 'open';
+                      const hasCharts = Boolean(t.beforeChartId || t.afterChartId);
+                      return (
+                        <div
+                          key={t.id}
+                          className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card-solid)] p-3 space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-mono-num text-sm font-bold text-[var(--text-primary)]">
+                                {t.symbol}
+                              </span>
+                              <span
+                                className="text-xs font-semibold"
+                                style={{
+                                  color: t.side === 'Long' ? 'var(--positive)' : 'var(--negative)',
+                                }}
+                              >
+                                {t.side}
+                              </span>
+                            </div>
+                            {isOpen ? (
+                              <span
+                                className="font-mono-num text-[10px] font-bold uppercase px-2 py-0.5 rounded-md"
+                                style={{
+                                  backgroundColor: 'var(--warning-soft)',
+                                  color: 'var(--warning)',
+                                }}
+                              >
+                                OPEN
+                              </span>
+                            ) : (
+                              <span
+                                className="font-mono-num text-sm font-bold"
+                                style={{
+                                  color: t.netPnl >= 0 ? 'var(--positive)' : 'var(--negative)',
+                                }}
+                              >
+                                {formatMoney(t.netPnl, settings.currency, settings.privacyMode, {
+                                  signed: true,
+                                })}
+                              </span>
+                            )}
                           </div>
-                          <span
-                            className="font-mono-num text-sm font-bold"
-                            style={{ color: t.netPnl >= 0 ? 'var(--positive)' : 'var(--negative)' }}
-                          >
-                            {formatMoney(t.netPnl, settings.currency, settings.privacyMode, {
-                              signed: true,
-                            })}
-                          </span>
-                        </div>
 
-                        <div className="text-[11px] text-[var(--text-muted)]">
-                          {t.setup} · {formatR(t.rMultiple)} · {t.mentalState} ·{' '}
-                          {t.ruleFollowed ? 'Rule OK' : 'Rule Broken'}
-                        </div>
+                          <div className="text-[11px] text-[var(--text-muted)]">
+                            {t.setup}
+                            {!isOpen && ` · ${formatR(t.rMultiple)}`} · {t.mentalState} ·{' '}
+                            {t.ruleFollowed ? 'Rule OK' : 'Rule Broken'}
+                          </div>
 
-                        {t.note && (
-                          <p className="text-xs text-[var(--text-secondary)] leading-snug">
-                            {t.note}
-                          </p>
-                        )}
+                          {t.note && (
+                            <p className="text-xs text-[var(--text-secondary)] leading-snug">
+                              {t.note}
+                            </p>
+                          )}
 
-                        <div className="flex items-center justify-between pt-1">
-                          {(t.beforeChartId || t.afterChartId) ? (
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingTrade(t)}
+                                className="inline-flex items-center gap-1 rounded-lg bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-text)] hover:opacity-85 cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                {isOpen ? 'Update P&L / Charts' : 'Edit'}
+                              </button>
+                              {hasCharts && (
+                                <button
+                                  type="button"
+                                  onClick={() => setLightboxTrade(t)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+                                >
+                                  <Camera className="w-3 h-3" />
+                                  Charts
+                                </button>
+                              )}
+                            </div>
                             <button
                               type="button"
-                              onClick={() => setLightboxTrade(t)}
-                              className="inline-flex items-center gap-1 text-xs font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
+                              onClick={() => onDeleteTrade(t.id)}
+                              aria-label="Delete trade"
+                              className="p-1 rounded-md text-[var(--text-muted)] hover:text-rose-400 cursor-pointer"
                             >
-                              <Camera className="w-3.5 h-3.5" />
-                              View Before/After Charts
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                          ) : (
-                            <span className="text-[11px] text-[var(--text-muted)]">No charts</span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => onDeleteTrade(t.id)}
-                            aria-label="Delete trade"
-                            className="p-1 rounded-md text-[var(--text-muted)] hover:text-rose-400 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             </div>
           </div>
         ) : (
-          /* Filterable List View */
+          /* Trade List View */
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="relative">
-                <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search symbol, note, mood..."
-                  className="tb-input w-full rounded-xl pl-9 pr-3 py-2 text-xs"
+                  placeholder="Search symbol, note, mindset..."
+                  className="tb-input w-full rounded-xl pl-8 pr-3 py-2 text-xs"
                 />
               </div>
 
@@ -1080,7 +1170,7 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                 onChange={(e) => setFilterAccount(e.target.value)}
                 className="tb-input rounded-xl px-3 py-2 text-xs"
               >
-                <option value="all">All Accounts</option>
+                <option value="all">All Prop Accounts</option>
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
@@ -1138,6 +1228,7 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                     filteredTrades.map((t) => {
                       const acc = accountLookup.get(t.accountId);
                       const hasCharts = Boolean(t.beforeChartId || t.afterChartId);
+                      const isOpen = t.status === 'open';
                       return (
                         <tr
                           key={t.id}
@@ -1147,7 +1238,7 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                             {t.date}
                           </td>
                           <td className="py-3 px-3.5 whitespace-nowrap text-[var(--text-primary)]">
-                            {acc?.name ?? 'Account'}
+                            {acc?.name ?? (t.accountId === 'general' ? 'General Account' : 'Account')}
                           </td>
                           <td className="py-3 px-3.5 whitespace-nowrap">
                             <span className="font-mono-num font-bold text-[var(--text-primary)]">
@@ -1182,15 +1273,30 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                             </span>
                           </td>
                           <td className="py-3 px-3.5 font-mono-num text-right text-[var(--text-secondary)]">
-                            {formatR(t.rMultiple)}
+                            {isOpen ? '—' : formatR(t.rMultiple)}
                           </td>
-                          <td
-                            className="py-3 px-3.5 font-mono-num font-bold text-right whitespace-nowrap"
-                            style={{ color: t.netPnl >= 0 ? 'var(--positive)' : 'var(--negative)' }}
-                          >
-                            {formatMoney(t.netPnl, settings.currency, settings.privacyMode, {
-                              signed: true,
-                            })}
+                          <td className="py-3 px-3.5 font-mono-num font-bold text-right whitespace-nowrap">
+                            {isOpen ? (
+                              <span
+                                className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md"
+                                style={{
+                                  backgroundColor: 'var(--warning-soft)',
+                                  color: 'var(--warning)',
+                                }}
+                              >
+                                OPEN
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  color: t.netPnl >= 0 ? 'var(--positive)' : 'var(--negative)',
+                                }}
+                              >
+                                {formatMoney(t.netPnl, settings.currency, settings.privacyMode, {
+                                  signed: true,
+                                })}
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3.5 text-center">
                             {hasCharts ? (
@@ -1200,21 +1306,39 @@ export const JournalTab: React.FC<JournalTabProps> = ({
                                 className="inline-flex items-center gap-1 rounded-lg bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-text)] hover:opacity-85 cursor-pointer whitespace-nowrap"
                               >
                                 <Camera className="w-3 h-3" />
-                                Charts
+                                View
                               </button>
                             ) : (
-                              <span className="text-[var(--text-muted)]">—</span>
+                              <button
+                                type="button"
+                                onClick={() => setEditingTrade(t)}
+                                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:underline cursor-pointer whitespace-nowrap"
+                              >
+                                + Add
+                              </button>
                             )}
                           </td>
-                          <td className="py-3 px-3.5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => onDeleteTrade(t.id)}
-                              aria-label="Delete trade"
-                              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                          <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setEditingTrade(t)}
+                                title={isOpen ? 'Update P&L & Charts' : 'Edit Trade'}
+                                aria-label="Update trade outcome and charts"
+                                className="inline-flex items-center gap-1 rounded-lg bg-[var(--bg-elevated)] px-2 py-1.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-text)] cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                <span>{isOpen ? 'Update' : 'Edit'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteTrade(t.id)}
+                                aria-label="Delete trade"
+                                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1234,20 +1358,21 @@ export const JournalTab: React.FC<JournalTabProps> = ({
         onClose={() => setLightboxTrade(null)}
       />
 
-      <ChartAnnotatorModal
-        open={Boolean(annotatingPreview)}
-        title={
-          annotatingPreview === 'before'
-            ? 'Annotate Before Chart Preview'
-            : 'Annotate After Chart Preview'
-        }
-        imageUrl={annotatingPreview === 'before' ? beforePreview : afterPreview}
-        onSave={(annotatedUrl) => {
-          if (annotatingPreview === 'before') setBeforePreview(annotatedUrl);
-          else if (annotatingPreview === 'after') setAfterPreview(annotatedUrl);
-          setAnnotatingPreview(null);
+      <TradeUpdateModal
+        trade={editingTrade}
+        accounts={accounts}
+        allTrades={trades}
+        settings={settings}
+        onSave={(updated) => {
+          onUpdateTrade(updated);
+          setSaveFeedback(
+            updated.status === 'closed'
+              ? `Updated ${updated.symbol} (${formatMoney(updated.netPnl, settings.currency, settings.privacyMode, { signed: true })})`
+              : `Saved updates to open trade ${updated.symbol}`
+          );
+          window.setTimeout(() => setSaveFeedback(null), 3500);
         }}
-        onClose={() => setAnnotatingPreview(null)}
+        onClose={() => setEditingTrade(null)}
       />
 
       <CsvImportModal

@@ -7,7 +7,6 @@ import {
   Download,
   LayoutDashboard,
   Settings,
-  ShieldCheck,
   TrendingUp,
   X,
 } from 'lucide-react';
@@ -29,7 +28,6 @@ const NAV_ITEMS: { id: TabId; label: string; icon: React.ComponentType<{ classNa
     { id: 'lotsize', label: 'Lot Size', icon: Calculator },
     { id: 'sessions', label: 'Sessions', icon: Clock },
     { id: 'roi', label: 'ROI', icon: TrendingUp },
-    { id: 'guard', label: 'Guard', icon: ShieldCheck },
   ];
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -137,7 +135,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }}
                     type="button"
                     onClick={() => onTabChange(id)}
-                    className="relative z-10 flex items-center gap-1.5 rounded-full px-3 lg:px-3.5 py-2 text-xs lg:text-sm font-medium whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer"
+                    className="relative z-10 flex items-center gap-1.5 rounded-full px-2.5 lg:px-3 py-2 text-xs lg:text-[13px] font-medium whitespace-nowrap shrink-0 transition-colors duration-200 cursor-pointer"
                     style={{
                       color: isActive ? 'var(--nav-pill-text)' : 'var(--text-secondary)',
                     }}
@@ -185,7 +183,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </header>
 
-      {/* Mobile Floating Bottom Frosted-Glass Pill Navigation (< 768px) — 5 visible, swipe to reveal tabs 6–7 */}
+      {/* Mobile Floating Bottom Frosted-Glass Pill Navigation (< 768px) — 5 visible, swipe to reveal tabs 6–8 */}
       <nav
         aria-label="Mobile navigation"
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 px-3 pt-1"

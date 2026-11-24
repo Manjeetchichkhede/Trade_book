@@ -37,7 +37,6 @@ import { JournalTab } from './components/JournalTab';
 import { LotSizeTab } from './components/LotSizeTab';
 import { SessionsTab } from './components/SessionsTab';
 import { RoiTab } from './components/RoiTab';
-import { GuardTab } from './components/GuardTab';
 import { SettingsModal } from './components/SettingsModal';
 import { StartupNameModal } from './components/StartupNameModal';
 import { CursorBackground } from './components/CursorBackground';
@@ -130,7 +129,15 @@ export default function App() {
         setAccounts(savedAccounts);
         setTrades(savedTrades ?? []);
         setRoiEntries(savedRoi ?? []);
-        setSettings({ ...DEFAULT_SETTINGS, ...(savedSettings ?? {}) });
+        const mergedSettings: AppSettings = {
+          ...DEFAULT_SETTINGS,
+          ...(savedSettings ?? {}),
+        };
+        if (!savedSettings?.cursorEffect) {
+          mergedSettings.cursorEffect =
+            savedSettings?.cursorAnimation === false ? 'none' : DEFAULT_SETTINGS.cursorEffect;
+        }
+        setSettings(mergedSettings);
 
         const mergedGuardrail: GuardrailConfig = {
           ...defaultGuardrail,
@@ -161,7 +168,7 @@ export default function App() {
     };
   }, []);
 
-  // Sync theme, font, custom fontColor, glass & gradient attributes on <html>
+  // Sync theme, font, custom fontColor, window opacity, glass & gradient attributes on <html>
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-theme', settings.theme);
@@ -170,17 +177,68 @@ export default function App() {
     root.setAttribute('data-glass-nav', String(settings.glassNav));
     root.setAttribute('data-bg-gradient', String(settings.bgGradient));
 
-    if (settings.fontColor && settings.fontColor.trim()) {
-      root.style.setProperty('--text-primary', settings.fontColor.trim());
-    } else {
-      root.style.removeProperty('--text-primary');
-    }
+    const rawOpacity = Number.isFinite(settings.windowOpacity) ? settings.windowOpacity : 70;
+    const cardAlpha = Math.min(1, Math.max(0.15, rawOpacity / 100));
+    const navAlpha = Math.min(1, cardAlpha + 0.08);
+    const elevatedAlpha = Math.min(1, cardAlpha + 0.1);
+    const inputAlpha = Math.min(1, cardAlpha + 0.12);
+
+    root.style.setProperty('--window-opacity', cardAlpha.toFixed(2));
+    root.style.setProperty('--nav-opacity', navAlpha.toFixed(2));
+    root.style.setProperty('--elevated-opacity', elevatedAlpha.toFixed(2));
+    root.style.setProperty('--input-opacity', inputAlpha.toFixed(2));
+    root.style.removeProperty('--text-primary');
 
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
       metaTheme.setAttribute('content', THEME_COLORS[settings.theme]);
     }
   }, [settings]);
+
+  // Disable zoom in / zoom out (Ctrl/Cmd+wheel, Ctrl/Cmd+ +/-/0, pinch-to-zoom, Safari gestures)
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (['+', '-', '=', '_', '0'].includes(e.key) ||
+          ['Equal', 'Minus', 'Digit0', 'NumpadAdd', 'NumpadSubtract', 'Numpad0'].includes(e.code))
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    };
+
+    const preventGesture = (e: Event) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('gesturestart', preventGesture, { passive: false });
+    document.addEventListener('gesturechange', preventGesture, { passive: false });
+    document.addEventListener('gestureend', preventGesture, { passive: false });
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('gesturestart', preventGesture);
+      document.removeEventListener('gesturechange', preventGesture);
+      document.removeEventListener('gestureend', preventGesture);
+    };
+  }, []);
 
   // Persist slices when hydrated
   useEffect(() => {
@@ -249,12 +307,12 @@ export default function App() {
     setAccounts((prev) => prev.filter((a) => a.id !== accountId));
   }, []);
 
-  const handleUpdateGuardrailConfig = useCallback((patch: Partial<GuardrailConfig>) => {
-    setGuardrailConfig((prev) => ({ ...prev, ...patch }));
-  }, []);
-
   const handleAddTrade = useCallback((trade: Trade) => {
     setTrades((prev) => [trade, ...prev]);
+  }, []);
+
+  const handleUpdateTrade = useCallback((updated: Trade) => {
+    setTrades((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
   }, []);
 
   const handleBulkImportTrades = useCallback((imported: Trade[]) => {
@@ -327,11 +385,18 @@ export default function App() {
       setTrades(parsed.trades);
       setRoiEntries(Array.isArray(parsed.roiEntries) ? parsed.roiEntries : []);
       if (parsed.settings) {
-        setSettings((prev) => ({
-          ...DEFAULT_SETTINGS,
-          ...parsed.settings,
-          traderName: parsed.settings?.traderName || prev.traderName,
-        }));
+        setSettings((prev) => {
+          const next: AppSettings = {
+            ...DEFAULT_SETTINGS,
+            ...parsed.settings,
+            traderName: parsed.settings?.traderName || prev.traderName,
+          };
+          if (!parsed.settings?.cursorEffect) {
+            next.cursorEffect =
+              parsed.settings?.cursorAnimation === false ? 'none' : DEFAULT_SETTINGS.cursorEffect;
+          }
+          return next;
+        });
       }
       if (Array.isArray(parsed.checklist) && parsed.checklist.length > 0) {
         setChecklist(parsed.checklist);
@@ -448,10 +513,7 @@ export default function App() {
       )}
 
       {/* Interactive cursor-reactive ambient animation on Windows/desktop */}
-      <CursorBackground
-        enabled={settings.cursorAnimation && settings.bgGradient}
-        theme={settings.theme}
-      />
+      <CursorBackground effect={settings.cursorEffect} theme={settings.theme} />
 
       <div className="relative z-10 flex min-h-screen flex-col">
         <Navbar
@@ -478,8 +540,6 @@ export default function App() {
                   trades={trades}
                   roiEntries={roiEntries}
                   settings={settings}
-                  newsEvents={newsEvents}
-                  guardrailConfig={guardrailConfig}
                   onNavigateTab={setActiveTab}
                 />
               )}
@@ -501,13 +561,14 @@ export default function App() {
                   accounts={accounts}
                   trades={trades}
                   settings={settings}
-                  newsEvents={newsEvents}
-                  guardrailConfig={guardrailConfig}
+                  checklist={checklist}
                   preselectedAccountId={preselectedJournalAcc}
                   onClearPreselectedAccount={() => setPreselectedJournalAcc(null)}
                   onAddTrade={handleAddTrade}
+                  onUpdateTrade={handleUpdateTrade}
                   onBulkImportTrades={handleBulkImportTrades}
                   onDeleteTrade={handleDeleteTrade}
+                  onUpdateChecklist={setChecklist}
                   onNavigateTab={setActiveTab}
                 />
               )}
@@ -529,18 +590,6 @@ export default function App() {
                   onClearPreselectedPayout={() => setPreselectedPayoutAcc(null)}
                   onAddRoiEntry={handleAddRoiEntry}
                   onDeleteRoiEntry={handleDeleteRoiEntry}
-                />
-              )}
-
-              {activeTab === 'guard' && (
-                <GuardTab
-                  settings={settings}
-                  checklist={checklist}
-                  newsEvents={newsEvents}
-                  guardrailConfig={guardrailConfig}
-                  onUpdateChecklist={setChecklist}
-                  onUpdateNewsEvents={setNewsEvents}
-                  onUpdateGuardrailConfig={handleUpdateGuardrailConfig}
                 />
               )}
             </>

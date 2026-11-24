@@ -14,7 +14,7 @@ export function computeAccountMetrics(
   referenceDate: string = getTodayISO()
 ): AccountMetrics {
   const trades = allTrades
-    .filter((t) => t.accountId === account.id)
+    .filter((t) => t.accountId === account.id && t.status !== 'open')
     .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
 
   const dailyMap = new Map<string, number>();
@@ -148,7 +148,9 @@ export function computePortfolioKpis(
   let bestTradeSymbol = '—';
   let todayNetPnl = 0;
 
-  for (const t of trades) {
+  const closedTrades = trades.filter((t) => t.status !== 'open');
+
+  for (const t of closedTrades) {
     if (t.netPnl > 0) {
       wins++;
       grossProfit += t.netPnl;
@@ -171,7 +173,7 @@ export function computePortfolioKpis(
   const decided = wins + losses;
   const winRate = decided > 0 ? (wins / decided) * 100 : 0;
   const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 9.99 : 0;
-  const avgR = trades.length > 0 ? totalR / trades.length : 0;
+  const avgR = closedTrades.length > 0 ? totalR / closedTrades.length : 0;
 
   const totalFundedCapital = accounts.reduce((sum, a) => sum + a.startingBalance, 0);
   const fundedCount = accounts.filter((a) => a.stage === 'Funded').length;
@@ -220,6 +222,7 @@ export interface CurvePoint {
 export function buildPerformanceCurve(trades: Trade[]): CurvePoint[] {
   const byDate = new Map<string, number>();
   for (const t of trades) {
+    if (t.status === 'open') continue;
     byDate.set(t.date, (byDate.get(t.date) ?? 0) + t.netPnl);
   }
   const sortedDates = Array.from(byDate.keys()).sort();
@@ -258,8 +261,9 @@ export interface DisciplineAudit {
 }
 
 export function computeDisciplineAudit(trades: Trade[]): DisciplineAudit {
+  const closed = trades.filter((t) => t.status !== 'open');
   const setups: SetupAuditItem[] = PLAYBOOK_SETUPS.map((setup) => {
-    const matching = trades.filter((t) => t.setup === setup);
+    const matching = closed.filter((t) => t.setup === setup);
     const wins = matching.filter((t) => t.netPnl > 0).length;
     const decided = matching.filter((t) => t.netPnl !== 0).length;
     const netPnl = matching.reduce((s, t) => s + t.netPnl, 0);
@@ -275,8 +279,8 @@ export function computeDisciplineAudit(trades: Trade[]): DisciplineAudit {
     };
   });
 
-  const followed = trades.filter((t) => t.ruleFollowed);
-  const broken = trades.filter((t) => !t.ruleFollowed);
+  const followed = closed.filter((t) => t.ruleFollowed);
+  const broken = closed.filter((t) => !t.ruleFollowed);
 
   const followedWins = followed.filter((t) => t.netPnl > 0).length;
   const brokenWins = broken.filter((t) => t.netPnl > 0).length;
@@ -289,7 +293,7 @@ export function computeDisciplineAudit(trades: Trade[]): DisciplineAudit {
     brokenCount: broken.length,
     brokenPnl: broken.reduce((s, t) => s + t.netPnl, 0),
     brokenWinRate: broken.length > 0 ? (brokenWins / broken.length) * 100 : 0,
-    compliancePct: trades.length > 0 ? (followed.length / trades.length) * 100 : 100,
+    compliancePct: closed.length > 0 ? (followed.length / closed.length) * 100 : 0,
   };
 }
 

@@ -557,7 +557,6 @@ export function convertPreviewsToTrades(
   defaultSetup: PlaybookSetup,
   defaultRiskUsd: number
 ): Trade[] {
-  const safeRisk = Math.max(1, defaultRiskUsd);
   return previews.map((p, idx) => ({
     id: generateId(`imp${idx}`),
     accountId,
@@ -565,7 +564,7 @@ export function convertPreviewsToTrades(
     symbol: p.symbol,
     side: p.side,
     setup: defaultSetup,
-    rMultiple: Math.round((p.netPnl / safeRisk) * 100) / 100,
+    rMultiple: defaultRiskUsd > 0 ? Math.round((p.netPnl / defaultRiskUsd) * 100) / 100 : 0,
     netPnl: p.netPnl,
     mentalState: 'Calm',
     ruleFollowed: true,

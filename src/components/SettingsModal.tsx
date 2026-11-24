@@ -15,6 +15,7 @@ import {
   BackupPayload,
   ClockStyleId,
   CurrencyId,
+  CursorEffectId,
   FontId,
   ThemeId,
 } from '../types';
@@ -48,21 +49,61 @@ const THEMES: { id: ThemeId; label: string; swatch: string }[] = [
 
 const FONTS: { id: FontId; label: string; sample: string }[] = [
   { id: 'inter', label: 'Inter', sample: 'Clean geometric UI' },
+  { id: 'google-sans', label: 'Google Sans', sample: 'Modern rounded clarity' },
+  { id: 'play', label: 'Play', sample: 'Sharp tech precision' },
   { id: 'ubuntu', label: 'Ubuntu', sample: 'Humanist precision' },
   { id: 'ios', label: 'iOS 15.5', sample: 'SF Pro system look' },
   { id: 'comfortaa', label: 'Comfortaa', sample: 'Soft rounded display' },
   { id: 'mono', label: 'Terminal Mono', sample: '01:45:20 · +2.5R' },
 ];
 
-const FONT_COLOR_PRESETS: { label: string; hex: string }[] = [
-  { label: 'Crisp White', hex: '#f8fafc' },
-  { label: 'Ice Sky', hex: '#e0f2fe' },
-  { label: 'Mint', hex: '#d1fae5' },
-  { label: 'Warm Gold', hex: '#fef3c7' },
-  { label: 'Silver', hex: '#e4e4e7' },
-  { label: 'Soft Slate', hex: '#cbd5e1' },
-  { label: 'Obsidian Ink', hex: '#0f172a' },
-  { label: 'Pure Black', hex: '#000000' },
+const CURSOR_EFFECTS: { id: CursorEffectId; label: string; desc: string }[] = [
+  { id: 'aurora-grid', label: 'Aurora Grid', desc: 'Soft luminous orbs & dot grid reveal' },
+  { id: 'spotlight', label: 'Spotlight', desc: 'Clean focused ambient beam' },
+  { id: 'crosshair', label: 'Trader Crosshair', desc: 'Precision terminal reticle lines' },
+  { id: 'particles', label: 'Constellation', desc: 'Interactive particle trails & threads' },
+  { id: 'magnetic-rings', label: 'Magnetic Rings', desc: 'Layered rings with click ripples' },
+  { id: 'none', label: 'Off', desc: 'Disable cursor background effects' },
+];
+
+const CHANGELOG_HISTORY: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: 'v2.6.0 Glass Edition',
+    date: 'Nov 2026',
+    highlights: [
+      'Journal split layout: Pre-Trade Checklist on left & fast Quick Trade Logger on right',
+      'Two-stage logging: capture trade entry fast, update Net P&L & screenshots after TP/SL',
+      'Overview live analog IST & NY clocks and streamlined Hero layout',
+      'Unified Lot Size calculator with live Recommended Lot Size panel on the right',
+      'Added Google Sans & Play fonts, Windows Opacity control, 5 Mouse Cursor Effects & Zoom Lock',
+    ],
+  },
+  {
+    version: 'v2.5.0',
+    date: 'Nov 2026',
+    highlights: [
+      'Custom Background Wallpaper presets & offline photo uploads with Dim/Blur controls',
+      'MT5 HTML Trade History & broker CSV importer with UTF-16 & duplicate detection',
+      'Google Drive Cloud Backup with one-click restore and encrypted JSON export',
+    ],
+  },
+  {
+    version: 'v2.4.0',
+    date: 'Oct 2026',
+    highlights: [
+      'Dedicated Active Funded & Eval Accounts tab with live drawdown & consistency tracking',
+      'Interactive Before & After Chart Annotator with drawing markup tools',
+      'Swipeable mobile bottom navigation pill bar with 5-tab viewport fit',
+    ],
+  },
+  {
+    version: 'v2.0.0',
+    date: 'Sep 2026',
+    highlights: [
+      'Offline-first IndexedDB PWA architecture with Glass Edition multi-theme UI',
+      'IST & New York Killzone clocks, Prop Challenge ROI ledger, and Playbook audit',
+    ],
+  },
 ];
 
 const CLOCK_STYLES: { id: ClockStyleId; label: string }[] = [
@@ -89,19 +130,14 @@ const TOGGLE_ITEMS: { key: keyof AppSettings; label: string; desc: string }[] = 
     desc: 'Ambient multi-tone radial glow behind all content',
   },
   {
-    key: 'cursorAnimation',
-    label: 'Cursor Background Animation',
-    desc: 'Interactive luminous backdrop following your mouse cursor on Windows/desktop',
-  },
-  {
     key: 'liveClocksOverview',
     label: 'Live Clocks on Overview',
-    desc: 'Show ticking IST & NY digital clocks inside Hero card',
+    desc: 'Show ticking IST & NY analog clocks inside Hero card',
   },
   {
     key: 'breachGuardrail',
     label: 'Drawdown Breach Guardrail',
-    desc: 'Warn & guard before logging a trade that breaches firm rules',
+    desc: 'Warn & guard before saving a trade outcome that breaches firm rules',
   },
   {
     key: 'compactAccounts',
@@ -427,6 +463,90 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </section>
 
+        {/* Window Opacity */}
+        <section>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                Windows Opacity
+              </h3>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Adjust transparency of cards, panels, modals, and navigation bars over your background.
+              </p>
+            </div>
+            {settings.windowOpacity !== 70 && (
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ windowOpacity: 70 })}
+                className="text-xs font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
+              >
+                Reset (70%)
+              </button>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-3.5 space-y-3">
+            <div>
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="text-[var(--text-secondary)] font-medium">
+                  Window Surface Opacity
+                </span>
+                <span className="font-mono-num text-[var(--text-primary)] font-semibold">
+                  {settings.windowOpacity}%
+                </span>
+              </div>
+              <input
+                type="range"
+                aria-label="Window surface opacity"
+                min="15"
+                max="100"
+                step="1"
+                value={settings.windowOpacity}
+                onChange={(e) => onUpdateSettings({ windowOpacity: Number(e.target.value) })}
+                className="tb-range w-full"
+              />
+              <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] mt-1">
+                <span>15% Ultra Glass</span>
+                <span>50% Frosted</span>
+                <span>100% Solid</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--border-subtle)]">
+              {(
+                [
+                  { label: 'Ultra Glass', value: 25 },
+                  { label: 'Frosted', value: 50 },
+                  { label: 'Balanced', value: 70 },
+                  { label: 'Deep', value: 88 },
+                  { label: 'Solid', value: 100 },
+                ] as const
+              ).map((preset) => {
+                const active = settings.windowOpacity === preset.value;
+                return (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => onUpdateSettings({ windowOpacity: preset.value })}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer"
+                    style={{
+                      backgroundColor: active ? 'var(--accent-soft)' : 'var(--bg-elevated)',
+                      border: active
+                        ? '1px solid var(--accent)'
+                        : '1px solid var(--border-subtle)',
+                      color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {active && <Check className="w-3 h-3" />}
+                    <span>{preset.label}</span>
+                    <span className="font-mono-num opacity-75">{preset.value}%</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
         {/* Font Style */}
         <section>
           <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Font Style</h3>
@@ -459,90 +579,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </section>
 
-        {/* Font Color */}
+        {/* Mouse Cursor Effect */}
         <section>
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div>
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Font Color</h3>
-              <p className="text-[11px] text-[var(--text-muted)]">
-                Customize primary text color across all tabs while preserving button contrast.
-              </p>
-            </div>
-            {settings.fontColor && (
-              <button
-                type="button"
-                onClick={() => onUpdateSettings({ fontColor: '' })}
-                className="text-xs font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
-              >
-                Reset to Theme Default
-              </button>
-            )}
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+              Mouse Cursor Effect
+            </h3>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Choose an interactive desktop cursor effect rendered behind cards and panels.
+            </p>
           </div>
-
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-3.5 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onUpdateSettings({ fontColor: '' })}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer"
-                style={{
-                  backgroundColor: !settings.fontColor ? 'var(--accent-soft)' : 'var(--bg-elevated)',
-                  border: !settings.fontColor
-                    ? '1px solid var(--accent)'
-                    : '1px solid var(--border-subtle)',
-                  color: !settings.fontColor ? 'var(--accent-text)' : 'var(--text-secondary)',
-                }}
-              >
-                {!settings.fontColor && <Check className="w-3 h-3" />}
-                Theme Default
-              </button>
-
-              {FONT_COLOR_PRESETS.map((preset) => {
-                const active = settings.fontColor.toLowerCase() === preset.hex.toLowerCase();
-                return (
-                  <button
-                    key={preset.hex}
-                    type="button"
-                    title={`${preset.label} (${preset.hex})`}
-                    onClick={() => onUpdateSettings({ fontColor: preset.hex })}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer"
-                    style={{
-                      backgroundColor: active ? 'var(--accent-soft)' : 'var(--bg-elevated)',
-                      border: active
-                        ? '1px solid var(--accent)'
-                        : '1px solid var(--border-subtle)',
-                      color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
-                    }}
-                  >
-                    <span
-                      className="h-3.5 w-3.5 rounded-full border border-white/30 shrink-0"
-                      style={{ backgroundColor: preset.hex }}
-                    />
-                    <span className="hidden sm:inline">{preset.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border-subtle)]">
-              <label className="inline-flex items-center gap-2.5 text-xs text-[var(--text-secondary)] cursor-pointer">
-                <span>Custom Color:</span>
-                <input
-                  type="color"
-                  aria-label="Pick custom font color"
-                  value={settings.fontColor || '#f8fafc'}
-                  onChange={(e) => onUpdateSettings({ fontColor: e.target.value })}
-                  className="h-7 w-10 rounded-lg border border-[var(--border-strong)] bg-transparent cursor-pointer"
-                />
-                <span className="font-mono-num text-xs font-semibold text-[var(--text-primary)]">
-                  {settings.fontColor ? settings.fontColor.toUpperCase() : 'Theme Default'}
-                </span>
-              </label>
-
-              <span className="text-xs font-semibold text-[var(--text-primary)]">
-                Preview: XAUUSD +2.5R · $1,250
-              </span>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {CURSOR_EFFECTS.map((fx) => {
+              const active = settings.cursorEffect === fx.id;
+              return (
+                <button
+                  key={fx.id}
+                  type="button"
+                  onClick={() =>
+                    onUpdateSettings({
+                      cursorEffect: fx.id,
+                      cursorAnimation: fx.id !== 'none',
+                    })
+                  }
+                  className="flex flex-col rounded-xl p-3 text-left transition-all cursor-pointer"
+                  style={{
+                    backgroundColor: active ? 'var(--accent-soft)' : 'var(--bg-input)',
+                    border: active
+                      ? '1px solid var(--accent)'
+                      : '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-xs font-semibold text-[var(--text-primary)]">
+                      {fx.label}
+                    </span>
+                    {active && <Check className="w-3.5 h-3.5 text-[var(--accent-text)] shrink-0" />}
+                  </div>
+                  <span className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-snug">
+                    {fx.desc}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -745,26 +824,74 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </section>
 
         {/* Software Details — Strictly Last Card at Bottom of Settings */}
-        <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-5">
-          <p className="text-xs font-semibold text-[var(--text-muted)] mb-4">Software Details</p>
-          <div className="flex flex-col sm:flex-row items-center sm:items-center gap-5">
-            <TradebookLogo size={80} className="rounded-[22px] shadow-lg shrink-0" />
-            <div className="text-center sm:text-left space-y-1">
-              <h4 className="text-xl font-bold tracking-tight lowercase text-[var(--text-primary)]">
-                tradebook
-              </h4>
-              <p className="text-sm text-[var(--text-secondary)]">
-                <span className="text-[var(--text-muted)]">Author: </span>
-                <span className="font-medium text-[var(--text-primary)]">
-                  Mr. Manjeet Chichkhede (Intraday Trader)
-                </span>
+        <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-5 space-y-5">
+          <div>
+            <p className="text-xs font-semibold text-[var(--text-muted)] mb-4">Software Details</p>
+            <div className="flex flex-col sm:flex-row items-center sm:items-center gap-5">
+              <TradebookLogo size={80} className="rounded-[22px] shadow-lg shrink-0" />
+              <div className="text-center sm:text-left space-y-1">
+                <h4 className="text-xl font-bold tracking-tight lowercase text-[var(--text-primary)]">
+                  tradebook
+                </h4>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  <span className="text-[var(--text-muted)]">Author: </span>
+                  <span className="font-medium text-[var(--text-primary)]">
+                    Mr. Manjeet Chichkhede (Intraday Trader)
+                  </span>
+                </p>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  <span className="text-[var(--text-muted)]">Software Version: </span>
+                  <span className="font-mono-num font-medium text-[var(--accent-text)]">
+                    v2.6.0 Glass Edition
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Changelog & Version History */}
+          <div className="pt-4 border-t border-[var(--border-subtle)] space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-[var(--text-primary)]">
+                Changelog &amp; Version History
               </p>
-              <p className="text-sm text-[var(--text-secondary)]">
-                <span className="text-[var(--text-muted)]">Software Version: </span>
-                <span className="font-mono-num font-medium text-[var(--accent-text)]">
-                  v2.4.0 Glass Edition
-                </span>
-              </p>
+              <span className="font-mono-num text-[11px] text-[var(--text-muted)]">
+                Latest: v2.6.0
+              </span>
+            </div>
+
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+              {CHANGELOG_HISTORY.map((release, idx) => (
+                <div
+                  key={release.version}
+                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card-solid)] p-3 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono-num text-xs font-bold text-[var(--accent-text)]">
+                        {release.version}
+                      </span>
+                      {idx === 0 && (
+                        <span
+                          className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                          style={{
+                            backgroundColor: 'var(--positive-soft)',
+                            color: 'var(--positive)',
+                          }}
+                        >
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-[var(--text-muted)]">{release.date}</span>
+                  </div>
+                  <ul className="space-y-1 text-[11px] text-[var(--text-secondary)] list-disc pl-4">
+                    {release.highlights.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           </div>
         </section>

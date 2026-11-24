@@ -35,10 +35,10 @@ export const RoiTab: React.FC<RoiTabProps> = ({
   onDeleteRoiEntry,
 }) => {
   const [entryType, setEntryType] = useState<RoiEntryType>('Payout');
-  const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? '');
+  const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? '__custom');
   const [customFirm, setCustomFirm] = useState<string>('');
   const [date, setDate] = useState<string>(getTodayISO());
-  const [grossAmount, setGrossAmount] = useState<string>('2000');
+  const [grossAmount, setGrossAmount] = useState<string>('');
   const [traderSplitPct, setTraderSplitPct] = useState<string>('80');
   const [note, setNote] = useState<string>('');
   const [tableFilter, setTableFilter] = useState<'all' | 'payouts' | 'fees'>('all');
@@ -48,8 +48,12 @@ export const RoiTab: React.FC<RoiTabProps> = ({
       setEntryType('Payout');
       setAccountId(preselectedPayoutAccountId);
       onClearPreselectedPayout();
+    } else if (accounts.length > 0 && (!accountId || (accountId !== '__custom' && !accounts.some((a) => a.id === accountId)))) {
+      setAccountId(accounts[0].id);
+    } else if (accounts.length === 0 && accountId !== '__custom') {
+      setAccountId('__custom');
     }
-  }, [preselectedPayoutAccountId, onClearPreselectedPayout]);
+  }, [preselectedPayoutAccountId, accounts, accountId, onClearPreselectedPayout]);
 
   const computedNetPreview = useMemo(() => {
     const gross = Math.max(0, Number(grossAmount) || 0);
@@ -349,7 +353,8 @@ export const RoiTab: React.FC<RoiTabProps> = ({
                 <input
                   type="number"
                   min="1"
-                  step="1"
+                  step="any"
+                  placeholder="0"
                   required
                   value={grossAmount}
                   onChange={(e) => setGrossAmount(e.target.value)}

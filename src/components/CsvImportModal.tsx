@@ -87,9 +87,9 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
     swapCol: -1,
     noteCol: -1,
   });
-  const [targetAccountId, setTargetAccountId] = useState<string>(accounts[0]?.id ?? '');
+  const [targetAccountId, setTargetAccountId] = useState<string>(accounts[0]?.id ?? 'general');
   const [defaultSetup, setDefaultSetup] = useState<PlaybookSetup>('Liquidity Sweep + CISD + BB');
-  const [defaultRiskUsd, setDefaultRiskUsd] = useState<string>('500');
+  const [defaultRiskUsd, setDefaultRiskUsd] = useState<string>('0');
   const [selectedRowIds, setSelectedRowIds] = useState<Set<number>>(new Set());
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -106,7 +106,10 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
     setFileName(name);
     setMapping(result.suggestedMapping);
 
-    const accId = targetAccountId || accounts[0]?.id || '';
+    const accId =
+      (targetAccountId && (targetAccountId === 'general' || accounts.some((a) => a.id === targetAccountId))
+        ? targetAccountId
+        : accounts[0]?.id) || 'general';
     setTargetAccountId(accId);
 
     const initialPreviews = buildTradePreviews(
@@ -161,7 +164,7 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
 
   const handleImport = () => {
     if (!targetAccountId || selectedPreviews.length === 0) return;
-    const risk = Math.max(1, Number(defaultRiskUsd) || 500);
+    const risk = Math.max(0, Number(defaultRiskUsd) || 0);
     const tradesToAdd = convertPreviewsToTrades(
       selectedPreviews,
       targetAccountId,
@@ -277,11 +280,15 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
                   onChange={(e) => setTargetAccountId(e.target.value)}
                   className="tb-input w-full rounded-lg px-3 py-2 text-xs"
                 >
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
+                  {accounts.length === 0 ? (
+                    <option value="general">General / Unlinked Account</option>
+                  ) : (
+                    accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
               <div>
@@ -306,7 +313,8 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
                 </label>
                 <input
                   type="number"
-                  min="1"
+                  min="0"
+                  placeholder="0"
                   value={defaultRiskUsd}
                   onChange={(e) => setDefaultRiskUsd(e.target.value)}
                   className="tb-input font-mono-num w-full rounded-lg px-3 py-2 text-xs"

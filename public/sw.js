@@ -50,10 +50,12 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
-  // Never cache Vite dev server modules or Google API / Firebase Auth requests
+  // Never cache Vite dev server modules, live market data feeds, or Google API / Firebase Auth requests
   if (
     isDevModuleRequest(url) ||
     url.pathname.startsWith('/__/auth/') ||
+    url.hostname.includes('binance.com') ||
+    url.hostname.includes('kraken.com') ||
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('google.com') ||
     url.hostname.includes('firebaseapp.com') ||
