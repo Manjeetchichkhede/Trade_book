@@ -57,6 +57,19 @@ export const SESSION_WINDOWS: SessionWindowDef[] = [
     note: 'High-probability Asian range sweep & daily high/low formation',
   },
   {
+    id: 'ny-session',
+    name: 'New York Session',
+    shortLabel: 'NY Session',
+    category: 'session',
+    nyStartHour: 8,
+    nyStartMin: 0,
+    nyEndHour: 17,
+    nyEndMin: 0,
+    keyPairs: ['XAUUSD', 'NAS100', 'US30', 'EURUSD', 'GBPUSD'],
+    color: '#06b6d4',
+    note: 'Full New York institutional trading session spanning AM open, London close & PM trend',
+  },
+  {
     id: 'ny-am-kz',
     name: 'New York AM Killzone',
     shortLabel: 'NY AM KZ',
@@ -186,8 +199,11 @@ export interface EvaluatedSession {
   isLive: boolean;
   nyRangeText: string;
   istRangeText: string;
+  nyStartMin: number;
+  nyEndMin: number;
   istStartMin: number;
   istEndMin: number;
+  remainingSec: number;
   countdownLabel: string;
   countdownText: string;
 }
@@ -247,8 +263,11 @@ export function evaluateSessions(now: Date, dstMode: DstMode): EvaluatedSession[
       isLive,
       nyRangeText: `${formatHHMM(startMin)} – ${formatHHMM(endMin)} NY`,
       istRangeText: `${formatHHMM(istStartMin)} – ${formatHHMM(istEndMin)} IST`,
+      nyStartMin: startMin % 1440,
+      nyEndMin: endMin % 1440,
       istStartMin,
       istEndMin,
+      remainingSec,
       countdownLabel: isLive ? 'Closes in' : 'Opens in',
       countdownText: formatDurationSeconds(remainingSec),
     };
@@ -275,10 +294,11 @@ export function getActiveSessionHeadline(now: Date, dstMode: DstMode): {
     };
   }
 
-  // Otherwise pick nearest upcoming killzone/session
+  // Otherwise pick the nearest upcoming window
+  const nearest = [...evaluated].sort((a, b) => a.remainingSec - b.remainingSec)[0];
   return {
     name: 'Off-Peak / Market Quiet',
     isLive: false,
-    nextCountdown: `Next: ${evaluated[2].def.shortLabel} (${evaluated[2].istRangeText})`,
+    nextCountdown: `Next: ${nearest.def.shortLabel} in ${nearest.countdownText}`,
   };
 }

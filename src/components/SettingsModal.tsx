@@ -38,6 +38,7 @@ interface SettingsModalProps {
   onPickAutoBackupFolder: () => Promise<{ ok: boolean; message: string }>;
   onResumeAutoBackupFolder: () => Promise<{ ok: boolean; message: string }>;
   onClearAutoBackupFolder: () => Promise<void>;
+  onRequestPersistentStorage: () => Promise<{ ok: boolean; message: string }>;
   onRunAutoBackupNow: () => Promise<{ ok: boolean; message: string }>;
   onDownloadAutoBackup: () => Promise<{ ok: boolean; message: string }>;
   onRestoreAutoBackup: () => Promise<{ ok: boolean; message: string }>;
@@ -172,6 +173,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onPickAutoBackupFolder,
   onResumeAutoBackupFolder,
   onClearAutoBackupFolder,
+  onRequestPersistentStorage,
   onRunAutoBackupNow,
   onDownloadAutoBackup,
   onRestoreAutoBackup,
@@ -762,6 +764,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onPickFolder={onPickAutoBackupFolder}
             onResumeFolder={onResumeAutoBackupFolder}
             onClearFolder={onClearAutoBackupFolder}
+            onRequestPersistentStorage={onRequestPersistentStorage}
             onRunNow={onRunAutoBackupNow}
             onDownloadLatest={onDownloadAutoBackup}
             onRestoreLatest={onRestoreAutoBackup}

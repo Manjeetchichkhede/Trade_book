@@ -1,4 +1,9 @@
-import { AutoBackupMeta, AutoBackupTargetType, BackupPayload } from '../types';
+import {
+  AutoBackupMeta,
+  AutoBackupTargetType,
+  BackupPayload,
+  FolderPermissionState,
+} from '../types';
 import { idbDeleteRaw, idbGetRaw, idbSetRaw, kvGet, kvSet } from '../db/storage';
 
 const DIR_HANDLE_KEY = '__autobackup_dir_handle';
@@ -39,6 +44,83 @@ export function isOpfsSupported(): boolean {
     Boolean(navigator.storage) &&
     typeof navigator.storage.getDirectory === 'function'
   );
+}
+
+/**
+ * Checks persistent device storage permission & usage/quota via StorageManager API.
+ */
+export async function getStoragePermissionInfo(): Promise<{
+  persisted: boolean;
+  usageBytes: number;
+  quotaBytes: number;
+}> {
+  let persisted = false;
+  let usageBytes = 0;
+  let quotaBytes = 0;
+
+  if (typeof navigator !== 'undefined' && navigator.storage) {
+    try {
+      if (typeof navigator.storage.persisted === 'function') {
+        persisted = await navigator.storage.persisted();
+      }
+    } catch {
+      persisted = false;
+    }
+    try {
+      if (typeof navigator.storage.estimate === 'function') {
+        const est = await navigator.storage.estimate();
+        usageBytes = est.usage ?? 0;
+        quotaBytes = est.quota ?? 0;
+      }
+    } catch {
+      // Ignore quota estimation errors
+    }
+  }
+
+  return { persisted, usageBytes, quotaBytes };
+}
+
+/**
+ * Requests Persistent Local Device Storage permission from the browser/OS so the
+ * local backup folder & IndexedDB database are protected from automatic eviction.
+ */
+export async function requestPersistentStoragePermission(): Promise<{
+  granted: boolean;
+  usageBytes: number;
+  quotaBytes: number;
+  message: string;
+}> {
+  if (typeof navigator === 'undefined' || !navigator.storage) {
+    return {
+      granted: false,
+      usageBytes: 0,
+      quotaBytes: 0,
+      message: 'StorageManager API is not available in this browser.',
+    };
+  }
+
+  let granted = false;
+  try {
+    if (typeof navigator.storage.persist === 'function') {
+      granted = await navigator.storage.persist();
+    } else if (typeof navigator.storage.persisted === 'function') {
+      granted = await navigator.storage.persisted();
+    }
+  } catch {
+    granted = false;
+  }
+
+  const info = await getStoragePermissionInfo();
+  const finalGranted = granted || info.persisted;
+
+  return {
+    granted: finalGranted,
+    usageBytes: info.usageBytes,
+    quotaBytes: info.quotaBytes,
+    message: finalGranted
+      ? 'Persistent device storage permission granted. Local backup files are protected from browser cleanup.'
+      : 'Browser kept standard storage mode (installing the app as a PWA or bookmarking it automatically upgrades persistent storage permission).',
+  };
 }
 
 /**
@@ -107,7 +189,7 @@ async function readTextIfExists(
 export async function getSavedFolderInfo(): Promise<{
   handle: DirectoryHandleWithPerms | null;
   name: string | null;
-  permission: PermissionStateMode | 'none';
+  permission: FolderPermissionState;
 }> {
   const handle = await idbGetRaw<DirectoryHandleWithPerms>(DIR_HANDLE_KEY);
   if (!handle) {
@@ -124,20 +206,32 @@ export async function getSavedFolderInfo(): Promise<{
   }
 }
 
-export async function pickCustomBackupFolder(): Promise<
-  | { ok: true; name: string }
-  | { ok: false; reason: 'cancelled' | 'iframe-blocked' | 'unsupported' | 'error'; message: string }
+/**
+ * Prompts the user for device Files & Folders Read/Write permission, saves the folder handle,
+ * requests persistent storage, and immediately creates the configured backup subfolder on the device.
+ */
+export async function pickCustomBackupFolder(
+  folderPath: string,
+  createSubfolder: boolean
+): Promise<
+  | { ok: true; name: string; createdPath: string }
+  | { ok: false; reason: 'cancelled' | 'iframe-blocked' | 'unsupported' | 'denied' | 'error'; message: string }
 > {
   if (!isFolderPickerSupported()) {
     return {
       ok: false,
       reason: 'unsupported',
       message:
-        'Your browser does not support direct disk folder picking. Zero-permission local OPFS auto-backup remains active.',
+        'This browser does not expose direct device folder picking (supported on Chrome, Edge, Brave, Opera desktop/PWA). Local persistent OPFS auto-backup folder remains active.',
     };
   }
 
   try {
+    // Also request persistent storage permission in the same user gesture
+    if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
+      void navigator.storage.persist().catch(() => {});
+    }
+
     const picker = (window as WindowWithDirPicker).showDirectoryPicker!;
     const handle = await picker({
       id: 'tradebook-autobackup',
@@ -145,8 +239,34 @@ export async function pickCustomBackupFolder(): Promise<
       startIn: 'documents',
     });
 
+    // Explicitly verify/request readwrite permission on the selected device folder
+    let perm: PermissionStateMode = 'granted';
+    if (handle.queryPermission) {
+      perm = await handle.queryPermission({ mode: 'readwrite' });
+    }
+    if (perm !== 'granted' && handle.requestPermission) {
+      perm = await handle.requestPermission({ mode: 'readwrite' });
+    }
+    if (perm !== 'granted') {
+      return {
+        ok: false,
+        reason: 'denied',
+        message: 'Read/Write folder storage permission was not granted.',
+      };
+    }
+
+    // Create the local backup subfolder inside the chosen device directory right away
+    const segments = createSubfolder ? sanitizeFolderSegments(folderPath) : [];
+    if (segments.length > 0) {
+      await resolveNestedDir(handle, segments, true);
+    }
+
     await idbSetRaw(DIR_HANDLE_KEY, handle);
-    return { ok: true, name: handle.name || 'Selected Folder' };
+    const rootName = handle.name || 'Selected Folder';
+    const createdPath =
+      segments.length > 0 ? `${rootName}/${segments.join('/')}` : rootName;
+
+    return { ok: true, name: rootName, createdPath };
   } catch (err) {
     if (err instanceof DOMException) {
       if (err.name === 'AbortError') {
@@ -157,7 +277,7 @@ export async function pickCustomBackupFolder(): Promise<
           ok: false,
           reason: 'iframe-blocked',
           message:
-            'Direct PC folder picker is blocked inside embedded preview iframes. Open the app in its own browser tab or installed PWA to pick a PC disk folder — zero-permission auto-backup is already active here.',
+            'Browser security blocks device folder permission prompts inside embedded preview iframes. Open the app directly in its own browser tab or installed PWA to grant local folder permission and create the backup folder on your device.',
         };
       }
     }
@@ -165,27 +285,48 @@ export async function pickCustomBackupFolder(): Promise<
       ok: false,
       reason: 'error',
       message:
-        err instanceof Error ? err.message : 'Unable to link custom folder. Local auto-backup remains active.',
+        err instanceof Error
+          ? err.message
+          : 'Unable to grant folder permission. Local auto-backup remains active.',
     };
   }
 }
 
-export async function resumeSavedFolderPermission(): Promise<{ ok: boolean; message: string }> {
+export async function resumeSavedFolderPermission(
+  folderPath: string,
+  createSubfolder: boolean
+): Promise<{ ok: boolean; permission: FolderPermissionState; message: string }> {
   const { handle, name } = await getSavedFolderInfo();
   if (!handle) {
-    return { ok: false, message: 'No custom folder is linked.' };
+    return { ok: false, permission: 'none', message: 'No device folder is linked.' };
   }
   try {
     if (handle.requestPermission) {
       const perm = await handle.requestPermission({ mode: 'readwrite' });
       if (perm === 'granted') {
-        return { ok: true, message: `Folder "${name}" reconnected for silent auto-overwrite.` };
+        const segments = createSubfolder ? sanitizeFolderSegments(folderPath) : [];
+        if (segments.length > 0) {
+          await resolveNestedDir(handle, segments, true);
+        }
+        return {
+          ok: true,
+          permission: 'granted',
+          message: `Read/Write permission granted for "${name}". Local backup folder is ready.`,
+        };
       }
-      return { ok: false, message: 'Write access was not granted for the selected folder.' };
+      return {
+        ok: false,
+        permission: perm,
+        message: 'Write permission was denied for the selected device folder.',
+      };
     }
-    return { ok: true, message: `Folder "${name}" is ready.` };
+    return { ok: true, permission: 'granted', message: `Folder "${name}" is ready.` };
   } catch {
-    return { ok: false, message: 'Could not request access to the saved folder. Try choosing it again.' };
+    return {
+      ok: false,
+      permission: 'prompt',
+      message: 'Could not request permission for the saved folder. Try selecting the folder again.',
+    };
   }
 }
 
@@ -206,17 +347,20 @@ export async function getAutoBackupMeta(): Promise<AutoBackupMeta> {
 }
 
 /**
- * Overwrites the single auto-backup JSON file silently with zero permission prompts.
- * - Always writes to zero-permission OPFS (and IndexedDB mirror if OPFS unavailable).
- * - Also overwrites directly into the user's chosen PC folder whenever linked & granted.
+ * Overwrites the single auto-backup JSON file silently whenever anything changes.
+ * - Always creates/overwrites inside zero-permission OPFS local device vault (or IndexedDB mirror).
+ * - Whenever a local device folder handle is linked with granted readwrite permission,
+ *   also creates the configured subfolder (if enabled) and overwrites the JSON directly on disk.
  */
 export async function performAutoBackupOverwrite(
   payload: BackupPayload,
   folderPath: string,
-  rawFileName: string
+  rawFileName: string,
+  createSubfolder: boolean
 ): Promise<{
   meta: AutoBackupMeta;
   linkedFolderName: string | null;
+  folderPermission: FolderPermissionState;
   needsFolderPermission: boolean;
 }> {
   const fileName = sanitizeFileName(rawFileName);
@@ -229,7 +373,7 @@ export async function performAutoBackupOverwrite(
   let targetType: AutoBackupTargetType = 'idb';
   let displayPath = segments.length > 0 ? `${segments.join('/')}/${fileName}` : fileName;
 
-  // 1. Always write zero-permission OPFS file (overwrites every time)
+  // 1. Always write zero-permission OPFS local backup folder (overwrites every time)
   let wroteOpfs = false;
   if (isOpfsSupported()) {
     try {
@@ -249,17 +393,26 @@ export async function performAutoBackupOverwrite(
     targetType = 'idb';
   }
 
-  // 2. If user linked a local PC folder and permission is already granted, silently overwrite there too
+  // 2. If user granted device folder access, create subfolder (optional) & overwrite directly on disk
   const folderInfo = await getSavedFolderInfo();
+  let folderPermission: FolderPermissionState = folderInfo.permission;
   let needsFolderPermission = false;
 
   if (folderInfo.handle) {
     if (folderInfo.permission === 'granted') {
       try {
-        await writeTextOverwrite(folderInfo.handle, fileName, jsonString);
+        const deviceTargetDir =
+          createSubfolder && segments.length > 0
+            ? await resolveNestedDir(folderInfo.handle, segments, true)
+            : folderInfo.handle;
+        await writeTextOverwrite(deviceTargetDir, fileName, jsonString);
         targetType = 'folder';
-        displayPath = `${folderInfo.name}/${fileName}`;
+        displayPath =
+          createSubfolder && segments.length > 0
+            ? `${folderInfo.name}/${segments.join('/')}/${fileName}`
+            : `${folderInfo.name}/${fileName}`;
       } catch {
+        folderPermission = 'prompt';
         needsFolderPermission = true;
       }
     } else {
@@ -280,28 +433,41 @@ export async function performAutoBackupOverwrite(
   return {
     meta,
     linkedFolderName: folderInfo.name,
+    folderPermission,
     needsFolderPermission,
   };
 }
 
 /**
- * Reads the latest overwritten auto-backup JSON text from the linked PC folder, OPFS, or IndexedDB mirror.
+ * Reads the latest overwritten auto-backup JSON text from the linked device folder, OPFS, or IndexedDB mirror.
  */
 export async function readLatestAutoBackupText(
   folderPath: string,
-  rawFileName: string
+  rawFileName: string,
+  createSubfolder: boolean
 ): Promise<{ text: string; fileName: string } | null> {
   const fileName = sanitizeFileName(rawFileName);
   const segments = sanitizeFolderSegments(folderPath);
 
-  // Try linked PC folder first if granted
+  // Try linked device folder first if granted
   const folderInfo = await getSavedFolderInfo();
   if (folderInfo.handle && folderInfo.permission === 'granted') {
-    const folderText = await readTextIfExists(folderInfo.handle, fileName);
-    if (folderText) return { text: folderText, fileName };
+    try {
+      const deviceDir =
+        createSubfolder && segments.length > 0
+          ? await resolveNestedDir(folderInfo.handle, segments, false)
+          : folderInfo.handle;
+      const folderText = await readTextIfExists(deviceDir, fileName);
+      if (folderText) return { text: folderText, fileName };
+    } catch {
+      // Fall through to root or OPFS
+    }
+    // Also check root of linked folder in case subfolder setting was toggled
+    const rootText = await readTextIfExists(folderInfo.handle, fileName);
+    if (rootText) return { text: rootText, fileName };
   }
 
-  // Try OPFS zero-permission folder
+  // Try OPFS zero-permission local backup folder
   if (isOpfsSupported()) {
     try {
       const opfsRoot = await navigator.storage.getDirectory();

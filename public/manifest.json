@@ -10,6 +10,14 @@
   "background_color": "#060a14",
   "theme_color": "#060a14",
   "categories": ["finance", "productivity", "business"],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "application/json": [".json"]
+      }
+    }
+  ],
   "icons": [
     {
       "src": "/pwa-192x192.png",

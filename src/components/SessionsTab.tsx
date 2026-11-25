@@ -22,11 +22,31 @@ const DST_OPTIONS: { id: DstMode; label: string }[] = [
   { id: 'summer', label: 'Summer (UTC-4)' },
 ];
 
-type WindowFilter = 'all' | 'live' | 'killzones' | 'silver-bullet';
+type WindowFilter = 'all' | 'live' | 'sessions' | 'killzones' | 'silver-bullet';
+type TimelineTz = 'ist' | 'ny';
+
+const HOUR_TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+
+function getTrackSegments(startMin: number, endMin: number): { leftPct: number; widthPct: number }[] {
+  const s = ((startMin % 1440) + 1440) % 1440;
+  const e = ((endMin % 1440) + 1440) % 1440;
+  if (e === 0 && s > 0) {
+    return [{ leftPct: (s / 1440) * 100, widthPct: ((1440 - s) / 1440) * 100 }];
+  }
+  if (e > s) {
+    return [{ leftPct: (s / 1440) * 100, widthPct: ((e - s) / 1440) * 100 }];
+  }
+  // Wraps across midnight: split into [s..1440] and [0..e]
+  return [
+    { leftPct: (s / 1440) * 100, widthPct: ((1440 - s) / 1440) * 100 },
+    { leftPct: 0, widthPct: (e / 1440) * 100 },
+  ];
+}
 
 export const SessionsTab: React.FC<SessionsTabProps> = ({ settings, onUpdateSettings }) => {
   const [now, setNow] = useState<Date>(() => new Date());
   const [filter, setFilter] = useState<WindowFilter>('all');
+  const [timelineTz, setTimelineTz] = useState<TimelineTz>('ist');
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
@@ -42,11 +62,15 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({ settings, onUpdateSett
   const filteredSessions = useMemo(() => {
     return evaluatedSessions.filter((s) => {
       if (filter === 'live') return s.isLive;
+      if (filter === 'sessions') return s.def.category === 'session';
       if (filter === 'killzones') return s.def.category === 'killzone';
       if (filter === 'silver-bullet') return s.def.category === 'silver-bullet';
       return true;
     });
   }, [evaluatedSessions, filter]);
+
+  const activeClock = timelineTz === 'ist' ? clocks.ist : clocks.ny;
+  const nowPct = (activeClock.totalMinutes / 1440) * 100;
 
   return (
     <div className="space-y-6">
@@ -147,6 +171,156 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({ settings, onUpdateSett
         </div>
       </section>
 
+      {/* Minimalistic 24H Session Timeline */}
+      <section className="tb-glass rounded-2xl p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">
+              24H Session Timeline
+            </h2>
+            <p className="text-xs text-[var(--text-muted)]">
+              Live {timelineTz === 'ist' ? 'IST (UTC+5:30)' : clocks.ny.offsetLabel} window map ·
+              Current time{' '}
+              <span className="font-mono-num font-semibold text-[var(--accent-text)]">
+                {activeClock.formatted24.slice(0, 5)} {timelineTz.toUpperCase()}
+              </span>
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-1">
+            {(
+              [
+                { id: 'ist', label: 'IST 24H' },
+                { id: 'ny', label: 'NY 24H' },
+              ] as const
+            ).map((opt) => {
+              const active = timelineTz === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setTimelineTz(opt.id)}
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                  style={{
+                    backgroundColor: active ? 'var(--nav-pill)' : 'transparent',
+                    color: active ? 'var(--nav-pill-text)' : 'var(--text-secondary)',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Hour Axis + Minimalistic Track Bars */}
+        <div className="overflow-x-auto pb-1">
+          <div className="min-w-[540px] space-y-2">
+            {/* Hour Tick Header */}
+            <div className="grid grid-cols-12 items-center gap-3">
+              <div className="col-span-3 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                Window
+              </div>
+              <div className="col-span-9 relative h-5">
+                {HOUR_TICKS.map((hr) => (
+                  <span
+                    key={hr}
+                    className="absolute top-0 -translate-x-1/2 font-mono-num text-[10px] text-[var(--text-muted)]"
+                    style={{
+                      left: `${(hr / 24) * 100}%`,
+                      transform:
+                        hr === 0
+                          ? 'translateX(0)'
+                          : hr === 24
+                          ? 'translateX(-100%)'
+                          : 'translateX(-50%)',
+                    }}
+                  >
+                    {String(hr).padStart(2, '0')}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Session Tracks */}
+            <div className="space-y-1.5">
+              {evaluatedSessions.map((item) => {
+                const startMin = timelineTz === 'ist' ? item.istStartMin : item.nyStartMin;
+                const endMin = timelineTz === 'ist' ? item.istEndMin : item.nyEndMin;
+                const segments = getTrackSegments(startMin, endMin);
+                const rangeLabel = timelineTz === 'ist' ? item.istRangeText : item.nyRangeText;
+
+                return (
+                  <div
+                    key={item.def.id}
+                    className="grid grid-cols-12 items-center gap-3 group"
+                    title={`${item.def.name}: ${item.istRangeText} | ${item.nyRangeText}`}
+                  >
+                    <div className="col-span-3 flex items-center justify-between gap-1.5 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{
+                            backgroundColor: item.def.color,
+                            opacity: item.isLive ? 1 : 0.65,
+                          }}
+                        />
+                        <span
+                          className={`text-xs truncate ${
+                            item.isLive
+                              ? 'font-semibold text-[var(--text-primary)]'
+                              : 'font-medium text-[var(--text-secondary)]'
+                          }`}
+                        >
+                          {item.def.shortLabel}
+                        </span>
+                      </div>
+                      <span className="hidden sm:inline font-mono-num text-[10px] text-[var(--text-muted)] whitespace-nowrap shrink-0">
+                        {rangeLabel.replace(/ (IST|NY)$/, '')}
+                      </span>
+                    </div>
+
+                    <div className="col-span-9 relative h-5 rounded-md bg-[var(--bg-input)] border border-[var(--border-subtle)] overflow-hidden">
+                      {/* Subtle 6h grid dividers */}
+                      {[25, 50, 75].map((pct) => (
+                        <div
+                          key={pct}
+                          className="pointer-events-none absolute top-0 bottom-0 w-px bg-[var(--border-subtle)] opacity-60"
+                          style={{ left: `${pct}%` }}
+                        />
+                      ))}
+
+                      {/* Session Segment Bars */}
+                      {segments.map((seg, idx) => (
+                        <div
+                          key={idx}
+                          className="absolute top-1 bottom-1 rounded-sm transition-opacity"
+                          style={{
+                            left: `${seg.leftPct}%`,
+                            width: `${seg.widthPct}%`,
+                            backgroundColor: item.def.color,
+                            opacity: item.isLive ? 0.92 : 0.36,
+                          }}
+                        />
+                      ))}
+
+                      {/* Live NOW Vertical Marker */}
+                      <div
+                        className="pointer-events-none absolute top-0 bottom-0 w-[2px] z-10"
+                        style={{
+                          left: `${nowPct}%`,
+                          backgroundColor: 'var(--text-primary)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Session & Killzone Cards */}
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -160,6 +334,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({ settings, onUpdateSett
               [
                 { id: 'all', label: 'All Windows' },
                 { id: 'live', label: 'Live Now' },
+                { id: 'sessions', label: 'Sessions' },
                 { id: 'killzones', label: 'Killzones' },
                 { id: 'silver-bullet', label: 'Silver Bullet' },
               ] as { id: WindowFilter; label: string }[]

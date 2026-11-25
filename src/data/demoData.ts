@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoBackupEnabled: true,
   autoBackupFolder: 'tradebook-backups',
   autoBackupFileName: 'tradebook-autobackup.json',
+  autoBackupCreateSubfolder: true,
 };
 
 export function createDefaultChecklist(): ChecklistItem[] {

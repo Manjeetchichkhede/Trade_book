@@ -150,9 +150,11 @@ export interface AppSettings {
   autoBackupEnabled: boolean;
   autoBackupFolder: string;
   autoBackupFileName: string;
+  autoBackupCreateSubfolder: boolean;
 }
 
 export type AutoBackupTargetType = 'folder' | 'opfs' | 'idb';
+export type FolderPermissionState = 'granted' | 'prompt' | 'denied' | 'none';
 
 export interface AutoBackupMeta {
   lastSavedAt: string | null;
@@ -165,8 +167,12 @@ export interface AutoBackupMeta {
 export interface AutoBackupState extends AutoBackupMeta {
   status: 'idle' | 'saving' | 'saved' | 'error';
   linkedFolderName: string | null;
+  folderPermission: FolderPermissionState;
   needsFolderPermission: boolean;
   folderPickerSupported: boolean;
+  persistentStorageGranted: boolean;
+  storageUsageBytes: number;
+  storageQuotaBytes: number;
   inIframe: boolean;
   errorMessage: string | null;
 }

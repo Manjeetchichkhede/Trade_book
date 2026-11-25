@@ -34,12 +34,14 @@ import {
   clearSavedFolderHandle,
   getAutoBackupMeta,
   getSavedFolderInfo,
+  getStoragePermissionInfo,
   isFolderPickerSupported,
   isInIframe,
   isOpfsSupported,
   performAutoBackupOverwrite,
   pickCustomBackupFolder,
   readLatestAutoBackupText,
+  requestPersistentStoragePermission,
   resumeSavedFolderPermission,
 } from './utils/autoBackup';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -84,8 +86,12 @@ export default function App() {
     displayPath: `${DEFAULT_SETTINGS.autoBackupFolder}/${DEFAULT_SETTINGS.autoBackupFileName}`,
     writeCount: 0,
     linkedFolderName: null,
+    folderPermission: 'none',
     needsFolderPermission: false,
     folderPickerSupported: isFolderPickerSupported(),
+    persistentStorageGranted: false,
+    storageUsageBytes: 0,
+    storageQuotaBytes: 0,
     inIframe: isInIframe(),
     errorMessage: null,
   }));
@@ -113,6 +119,7 @@ export default function App() {
         savedWallpaper,
         savedAutoBackupMeta,
         savedFolderInfo,
+        storageInfo,
       ] = await Promise.all([
         kvGet<boolean>('seeded_v2'),
         kvGet<PropAccount[]>('accounts'),
@@ -125,6 +132,7 @@ export default function App() {
         getImage(CUSTOM_WALLPAPER_IMAGE_ID),
         getAutoBackupMeta(),
         getSavedFolderInfo(),
+        getStoragePermissionInfo(),
       ]);
 
       if (!active) return;
@@ -136,8 +144,12 @@ export default function App() {
         ...savedAutoBackupMeta,
         status: savedAutoBackupMeta.lastSavedAt ? 'saved' : 'idle',
         linkedFolderName: savedFolderInfo.name,
+        folderPermission: savedFolderInfo.permission,
         needsFolderPermission:
           Boolean(savedFolderInfo.handle) && savedFolderInfo.permission !== 'granted',
+        persistentStorageGranted: storageInfo.persisted,
+        storageUsageBytes: storageInfo.usageBytes,
+        storageQuotaBytes: storageInfo.quotaBytes,
       }));
 
       const today = getTodayISO();
@@ -479,18 +491,26 @@ export default function App() {
     setAutoBackupState((prev) => ({ ...prev, status: 'saving', errorMessage: null }));
     try {
       const payload = await handleBuildBackupPayload();
-      const result = await performAutoBackupOverwrite(
-        payload,
-        settings.autoBackupFolder,
-        settings.autoBackupFileName
-      );
+      const [result, storageInfo] = await Promise.all([
+        performAutoBackupOverwrite(
+          payload,
+          settings.autoBackupFolder,
+          settings.autoBackupFileName,
+          settings.autoBackupCreateSubfolder
+        ),
+        getStoragePermissionInfo(),
+      ]);
       lastSavedAtRef.current = result.meta.lastSavedAt;
       setAutoBackupState((prev) => ({
         ...prev,
         ...result.meta,
         status: 'saved',
         linkedFolderName: result.linkedFolderName,
+        folderPermission: result.folderPermission,
         needsFolderPermission: result.needsFolderPermission,
+        persistentStorageGranted: storageInfo.persisted,
+        storageUsageBytes: storageInfo.usageBytes,
+        storageQuotaBytes: storageInfo.quotaBytes,
         errorMessage: null,
       }));
       return {
@@ -502,7 +522,12 @@ export default function App() {
       setAutoBackupState((prev) => ({ ...prev, status: 'error', errorMessage: msg }));
       return { ok: false, message: msg };
     }
-  }, [handleBuildBackupPayload, settings.autoBackupFolder, settings.autoBackupFileName]);
+  }, [
+    handleBuildBackupPayload,
+    settings.autoBackupFolder,
+    settings.autoBackupFileName,
+    settings.autoBackupCreateSubfolder,
+  ]);
 
   // Automatically overwrite JSON backup whenever ANY app data changes (zero permission prompts)
   useEffect(() => {
@@ -533,45 +558,83 @@ export default function App() {
     runAutoBackupNow,
   ]);
 
+  const handleRequestPersistentStorage = useCallback(async (): Promise<{
+    ok: boolean;
+    message: string;
+  }> => {
+    const res = await requestPersistentStoragePermission();
+    setAutoBackupState((prev) => ({
+      ...prev,
+      persistentStorageGranted: res.granted,
+      storageUsageBytes: res.usageBytes,
+      storageQuotaBytes: res.quotaBytes,
+    }));
+    return { ok: res.granted, message: res.message };
+  }, []);
+
   const handlePickAutoBackupFolder = useCallback(async (): Promise<{
     ok: boolean;
     message: string;
   }> => {
-    const res = await pickCustomBackupFolder();
+    const res = await pickCustomBackupFolder(
+      settings.autoBackupFolder,
+      settings.autoBackupCreateSubfolder
+    );
     if (!res.ok) {
       return { ok: false, message: res.reason === 'cancelled' ? '' : res.message };
     }
+    const storageInfo = await getStoragePermissionInfo();
     setAutoBackupState((prev) => ({
       ...prev,
       linkedFolderName: res.name,
+      folderPermission: 'granted',
       needsFolderPermission: false,
+      persistentStorageGranted: storageInfo.persisted,
+      storageUsageBytes: storageInfo.usageBytes,
+      storageQuotaBytes: storageInfo.quotaBytes,
       errorMessage: null,
     }));
     const writeRes = await runAutoBackupNow();
     return writeRes.ok
       ? {
           ok: true,
-          message: `Folder "${res.name}" linked & backup overwritten. Future changes will overwrite automatically.`,
+          message: `Permission granted & backup folder created at "${res.createdPath}". Future changes will overwrite automatically.`,
         }
       : writeRes;
-  }, [runAutoBackupNow]);
+  }, [runAutoBackupNow, settings.autoBackupFolder, settings.autoBackupCreateSubfolder]);
 
   const handleResumeAutoBackupFolder = useCallback(async (): Promise<{
     ok: boolean;
     message: string;
   }> => {
-    const res = await resumeSavedFolderPermission();
-    if (!res.ok) return res;
-    setAutoBackupState((prev) => ({ ...prev, needsFolderPermission: false, errorMessage: null }));
+    const res = await resumeSavedFolderPermission(
+      settings.autoBackupFolder,
+      settings.autoBackupCreateSubfolder
+    );
+    if (!res.ok) {
+      setAutoBackupState((prev) => ({
+        ...prev,
+        folderPermission: res.permission,
+        needsFolderPermission: res.permission !== 'granted',
+      }));
+      return { ok: false, message: res.message };
+    }
+    setAutoBackupState((prev) => ({
+      ...prev,
+      folderPermission: 'granted',
+      needsFolderPermission: false,
+      errorMessage: null,
+    }));
     const writeRes = await runAutoBackupNow();
-    return writeRes.ok ? res : writeRes;
-  }, [runAutoBackupNow]);
+    return writeRes.ok ? { ok: true, message: res.message } : writeRes;
+  }, [runAutoBackupNow, settings.autoBackupFolder, settings.autoBackupCreateSubfolder]);
 
   const handleClearAutoBackupFolder = useCallback(async () => {
     await clearSavedFolderHandle();
     setAutoBackupState((prev) => ({
       ...prev,
       linkedFolderName: null,
+      folderPermission: 'none',
       needsFolderPermission: false,
       targetType: isOpfsSupported() ? 'opfs' : 'idb',
     }));
@@ -586,7 +649,8 @@ export default function App() {
   }> => {
     const found = await readLatestAutoBackupText(
       settings.autoBackupFolder,
-      settings.autoBackupFileName
+      settings.autoBackupFileName,
+      settings.autoBackupCreateSubfolder
     );
     if (!found) {
       return { ok: false, message: 'No auto-backup JSON file exists yet. Click Overwrite Now first.' };
@@ -599,7 +663,11 @@ export default function App() {
     a.click();
     URL.revokeObjectURL(url);
     return { ok: true, message: `Downloaded latest auto-backup (${found.fileName}).` };
-  }, [settings.autoBackupFolder, settings.autoBackupFileName]);
+  }, [
+    settings.autoBackupFolder,
+    settings.autoBackupFileName,
+    settings.autoBackupCreateSubfolder,
+  ]);
 
   const handleRestoreAutoBackup = useCallback(async (): Promise<{
     ok: boolean;
@@ -607,7 +675,8 @@ export default function App() {
   }> => {
     const found = await readLatestAutoBackupText(
       settings.autoBackupFolder,
-      settings.autoBackupFileName
+      settings.autoBackupFileName,
+      settings.autoBackupCreateSubfolder
     );
     if (!found) {
       return { ok: false, message: 'No auto-backup JSON file found to restore.' };
@@ -618,7 +687,12 @@ export default function App() {
     } catch {
       return { ok: false, message: 'Stored auto-backup JSON file is corrupted.' };
     }
-  }, [handleApplyBackupPayload, settings.autoBackupFolder, settings.autoBackupFileName]);
+  }, [
+    handleApplyBackupPayload,
+    settings.autoBackupFolder,
+    settings.autoBackupFileName,
+    settings.autoBackupCreateSubfolder,
+  ]);
 
   const handleResetDemoData = useCallback(async () => {
     const existingWallpaper = await getImage(CUSTOM_WALLPAPER_IMAGE_ID);
@@ -798,6 +872,7 @@ export default function App() {
         onPickAutoBackupFolder={handlePickAutoBackupFolder}
         onResumeAutoBackupFolder={handleResumeAutoBackupFolder}
         onClearAutoBackupFolder={handleClearAutoBackupFolder}
+        onRequestPersistentStorage={handleRequestPersistentStorage}
         onRunAutoBackupNow={runAutoBackupNow}
         onDownloadAutoBackup={handleDownloadAutoBackup}
         onRestoreAutoBackup={handleRestoreAutoBackup}
