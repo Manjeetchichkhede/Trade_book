@@ -88,6 +88,63 @@ export async function kvSet<T>(key: string, value: T): Promise<void> {
   }
 }
 
+export async function idbGetRaw<T>(key: string): Promise<T | null> {
+  try {
+    const db = await openDB();
+    if (!db) return null;
+    return await new Promise<T | null>((resolve) => {
+      try {
+        const tx = db.transaction(KV_STORE, 'readonly');
+        const req = tx.objectStore(KV_STORE).get(key);
+        req.onsuccess = () => resolve((req.result as T) ?? null);
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function idbSetRaw<T>(key: string, value: T): Promise<void> {
+  try {
+    const db = await openDB();
+    if (!db) return;
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(KV_STORE, 'readwrite');
+        tx.objectStore(KV_STORE).put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // Ignore IndexedDB errors
+  }
+}
+
+export async function idbDeleteRaw(key: string): Promise<void> {
+  try {
+    const db = await openDB();
+    if (!db) return;
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(KV_STORE, 'readwrite');
+        tx.objectStore(KV_STORE).delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // Ignore IndexedDB errors
+  }
+}
+
 export async function saveImage(id: string, dataUrl: string): Promise<void> {
   try {
     const db = await openDB();

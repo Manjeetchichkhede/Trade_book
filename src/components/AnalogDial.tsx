@@ -15,16 +15,17 @@ export const AnalogDial: React.FC<AnalogDialProps> = ({
   styleId,
   sizeClass = 'w-36 h-36 sm:w-40 sm:h-40',
 }) => {
-  const effectiveStyle = styleId === 'digital' ? 'modern' : styleId;
   const secDeg = clock.seconds * 6;
   const minDeg = clock.minutes * 6 + clock.seconds * 0.1;
   const hrDeg = (clock.hours % 12) * 30 + clock.minutes * 0.5;
 
+  const effectiveStyle: Exclude<ClockStyleId, 'digital'> =
+    styleId === 'digital' ? 'modern' : styleId;
   const isNeon = effectiveStyle === 'neon';
   const isRoman = effectiveStyle === 'roman';
 
   return (
-    <svg viewBox="0 0 180 180" className={`${sizeClass} shrink-0`} aria-hidden="true">
+    <svg viewBox="0 0 180 180" className={`${sizeClass} shrink-0`}>
       {/* Outer Rim */}
       <circle
         cx="90"

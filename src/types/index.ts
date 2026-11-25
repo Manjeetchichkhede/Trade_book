@@ -147,6 +147,28 @@ export interface AppSettings {
   wallpaperDim: number; // 0 - 85 (%)
   wallpaperBlur: number; // 0 - 20 (px)
   windowOpacity: number; // 15 - 100 (%)
+  autoBackupEnabled: boolean;
+  autoBackupFolder: string;
+  autoBackupFileName: string;
+}
+
+export type AutoBackupTargetType = 'folder' | 'opfs' | 'idb';
+
+export interface AutoBackupMeta {
+  lastSavedAt: string | null;
+  fileSizeBytes: number;
+  targetType: AutoBackupTargetType;
+  displayPath: string;
+  writeCount: number;
+}
+
+export interface AutoBackupState extends AutoBackupMeta {
+  status: 'idle' | 'saving' | 'saved' | 'error';
+  linkedFolderName: string | null;
+  needsFolderPermission: boolean;
+  folderPickerSupported: boolean;
+  inIframe: boolean;
+  errorMessage: string | null;
 }
 
 export interface AccountMetrics {

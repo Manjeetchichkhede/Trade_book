@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import {
   AppSettings,
+  AutoBackupState,
   BackupPayload,
   ClockStyleId,
   CurrencyId,
@@ -22,6 +23,7 @@ import {
 import { compressImageFile } from '../db/storage';
 import { WALLPAPER_PRESETS } from '../data/wallpapers';
 import { TradebookLogo } from './TradebookLogo';
+import { AutoBackupCard } from './AutoBackupCard';
 import { GoogleDriveBackupCard } from './GoogleDriveBackupCard';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
@@ -29,9 +31,16 @@ interface SettingsModalProps {
   open: boolean;
   settings: AppSettings;
   customWallpaperUrl: string | null;
+  autoBackupState: AutoBackupState;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onUploadWallpaper: (dataUrl: string) => Promise<void>;
   onRemoveWallpaper: () => Promise<void>;
+  onPickAutoBackupFolder: () => Promise<{ ok: boolean; message: string }>;
+  onResumeAutoBackupFolder: () => Promise<{ ok: boolean; message: string }>;
+  onClearAutoBackupFolder: () => Promise<void>;
+  onRunAutoBackupNow: () => Promise<{ ok: boolean; message: string }>;
+  onDownloadAutoBackup: () => Promise<{ ok: boolean; message: string }>;
+  onRestoreAutoBackup: () => Promise<{ ok: boolean; message: string }>;
   onBuildBackupPayload: () => Promise<BackupPayload>;
   onApplyBackupPayload: (payload: Partial<BackupPayload>) => Promise<{ ok: boolean; message: string }>;
   onBackupJson: () => Promise<void>;
@@ -76,6 +85,7 @@ const CHANGELOG_HISTORY: { version: string; date: string; highlights: string[] }
       'Overview live analog IST & NY clocks and streamlined Hero layout',
       'Unified Lot Size calculator with live Recommended Lot Size panel on the right',
       'Added Google Sans & Play fonts, Windows Opacity control, 5 Mouse Cursor Effects & Zoom Lock',
+      'Zero-permission Auto-Backup JSON that overwrites automatically on every change with custom folder location',
     ],
   },
   {
@@ -155,9 +165,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   open,
   settings,
   customWallpaperUrl,
+  autoBackupState,
   onUpdateSettings,
   onUploadWallpaper,
   onRemoveWallpaper,
+  onPickAutoBackupFolder,
+  onResumeAutoBackupFolder,
+  onClearAutoBackupFolder,
+  onRunAutoBackupNow,
+  onDownloadAutoBackup,
+  onRestoreAutoBackup,
   onBuildBackupPayload,
   onApplyBackupPayload,
   onBackupJson,
@@ -736,6 +753,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">
             Data Backup &amp; Restore
           </h3>
+
+          {/* Zero-Permission Auto-Backup JSON (Overwrite on Every Change) */}
+          <AutoBackupCard
+            settings={settings}
+            autoBackup={autoBackupState}
+            onUpdateSettings={onUpdateSettings}
+            onPickFolder={onPickAutoBackupFolder}
+            onResumeFolder={onResumeAutoBackupFolder}
+            onClearFolder={onClearAutoBackupFolder}
+            onRunNow={onRunAutoBackupNow}
+            onDownloadLatest={onDownloadAutoBackup}
+            onRestoreLatest={onRestoreAutoBackup}
+          />
 
           {/* Google Drive Cloud Backup */}
           <GoogleDriveBackupCard

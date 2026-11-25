@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { WifiOff } from 'lucide-react';
 import {
   AppSettings,
+  AutoBackupState,
   BackupPayload,
   ChecklistItem,
   EconomicNewsEvent,
@@ -29,6 +30,18 @@ import {
 } from './data/demoData';
 import { CUSTOM_WALLPAPER_IMAGE_ID, getWallpaperPreset } from './data/wallpapers';
 import { getTodayISO } from './utils/format';
+import {
+  clearSavedFolderHandle,
+  getAutoBackupMeta,
+  getSavedFolderInfo,
+  isFolderPickerSupported,
+  isInIframe,
+  isOpfsSupported,
+  performAutoBackupOverwrite,
+  pickCustomBackupFolder,
+  readLatestAutoBackupText,
+  resumeSavedFolderPermission,
+} from './utils/autoBackup';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Navbar } from './components/Navbar';
 import { OverviewTab } from './components/OverviewTab';
@@ -63,6 +76,21 @@ export default function App() {
     createDefaultGuardrailConfig()
   );
   const [customWallpaperUrl, setCustomWallpaperUrl] = useState<string | null>(null);
+  const [autoBackupState, setAutoBackupState] = useState<AutoBackupState>(() => ({
+    status: 'idle',
+    lastSavedAt: null,
+    fileSizeBytes: 0,
+    targetType: isOpfsSupported() ? 'opfs' : 'idb',
+    displayPath: `${DEFAULT_SETTINGS.autoBackupFolder}/${DEFAULT_SETTINGS.autoBackupFileName}`,
+    writeCount: 0,
+    linkedFolderName: null,
+    needsFolderPermission: false,
+    folderPickerSupported: isFolderPickerSupported(),
+    inIframe: isInIframe(),
+    errorMessage: null,
+  }));
+  const autoBackupInitializedRef = useRef(false);
+  const lastSavedAtRef = useRef<string | null>(null);
 
   const [preselectedJournalAcc, setPreselectedJournalAcc] = useState<string | null>(null);
   const [preselectedPayoutAcc, setPreselectedPayoutAcc] = useState<string | null>(null);
@@ -83,6 +111,8 @@ export default function App() {
         savedNews,
         savedGuardrail,
         savedWallpaper,
+        savedAutoBackupMeta,
+        savedFolderInfo,
       ] = await Promise.all([
         kvGet<boolean>('seeded_v2'),
         kvGet<PropAccount[]>('accounts'),
@@ -93,11 +123,22 @@ export default function App() {
         kvGet<EconomicNewsEvent[]>('newsEvents'),
         kvGet<GuardrailConfig>('guardrailConfig'),
         getImage(CUSTOM_WALLPAPER_IMAGE_ID),
+        getAutoBackupMeta(),
+        getSavedFolderInfo(),
       ]);
 
       if (!active) return;
 
       setCustomWallpaperUrl(savedWallpaper);
+      lastSavedAtRef.current = savedAutoBackupMeta.lastSavedAt;
+      setAutoBackupState((prev) => ({
+        ...prev,
+        ...savedAutoBackupMeta,
+        status: savedAutoBackupMeta.lastSavedAt ? 'saved' : 'idle',
+        linkedFolderName: savedFolderInfo.name,
+        needsFolderPermission:
+          Boolean(savedFolderInfo.handle) && savedFolderInfo.permission !== 'granted',
+      }));
 
       const today = getTodayISO();
       const defaultChecklist = createDefaultChecklist();
@@ -168,7 +209,7 @@ export default function App() {
     };
   }, []);
 
-  // Sync theme, font, custom fontColor, window opacity, glass & gradient attributes on <html>
+  // Sync theme, font, window opacity, glass & gradient attributes on <html>
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-theme', settings.theme);
@@ -268,11 +309,6 @@ export default function App() {
 
   useEffect(() => {
     if (!hydrated) return;
-    kvSet('newsEvents', newsEvents);
-  }, [newsEvents, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
     kvSet('guardrailConfig', guardrailConfig);
   }, [guardrailConfig, hydrated]);
 
@@ -350,7 +386,7 @@ export default function App() {
   const handleBuildBackupPayload = useCallback(async (): Promise<BackupPayload> => {
     const images = await getAllImages();
     return {
-      version: '2.5.0',
+      version: '2.6.0',
       exportedAt: new Date().toISOString(),
       accounts,
       trades,
@@ -438,6 +474,151 @@ export default function App() {
     },
     [handleApplyBackupPayload]
   );
+
+  const runAutoBackupNow = useCallback(async (): Promise<{ ok: boolean; message: string }> => {
+    setAutoBackupState((prev) => ({ ...prev, status: 'saving', errorMessage: null }));
+    try {
+      const payload = await handleBuildBackupPayload();
+      const result = await performAutoBackupOverwrite(
+        payload,
+        settings.autoBackupFolder,
+        settings.autoBackupFileName
+      );
+      lastSavedAtRef.current = result.meta.lastSavedAt;
+      setAutoBackupState((prev) => ({
+        ...prev,
+        ...result.meta,
+        status: 'saved',
+        linkedFolderName: result.linkedFolderName,
+        needsFolderPermission: result.needsFolderPermission,
+        errorMessage: null,
+      }));
+      return {
+        ok: true,
+        message: `Overwrote ${result.meta.displayPath} successfully.`,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Auto-backup overwrite failed.';
+      setAutoBackupState((prev) => ({ ...prev, status: 'error', errorMessage: msg }));
+      return { ok: false, message: msg };
+    }
+  }, [handleBuildBackupPayload, settings.autoBackupFolder, settings.autoBackupFileName]);
+
+  // Automatically overwrite JSON backup whenever ANY app data changes (zero permission prompts)
+  useEffect(() => {
+    if (!hydrated || !settings.autoBackupEnabled) return;
+
+    // On first hydrated pass, only run immediately if no backup snapshot exists yet
+    if (!autoBackupInitializedRef.current) {
+      autoBackupInitializedRef.current = true;
+      if (lastSavedAtRef.current) return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void runAutoBackupNow();
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    hydrated,
+    settings.autoBackupEnabled,
+    accounts,
+    trades,
+    roiEntries,
+    settings,
+    checklist,
+    newsEvents,
+    guardrailConfig,
+    customWallpaperUrl,
+    runAutoBackupNow,
+  ]);
+
+  const handlePickAutoBackupFolder = useCallback(async (): Promise<{
+    ok: boolean;
+    message: string;
+  }> => {
+    const res = await pickCustomBackupFolder();
+    if (!res.ok) {
+      return { ok: false, message: res.reason === 'cancelled' ? '' : res.message };
+    }
+    setAutoBackupState((prev) => ({
+      ...prev,
+      linkedFolderName: res.name,
+      needsFolderPermission: false,
+      errorMessage: null,
+    }));
+    const writeRes = await runAutoBackupNow();
+    return writeRes.ok
+      ? {
+          ok: true,
+          message: `Folder "${res.name}" linked & backup overwritten. Future changes will overwrite automatically.`,
+        }
+      : writeRes;
+  }, [runAutoBackupNow]);
+
+  const handleResumeAutoBackupFolder = useCallback(async (): Promise<{
+    ok: boolean;
+    message: string;
+  }> => {
+    const res = await resumeSavedFolderPermission();
+    if (!res.ok) return res;
+    setAutoBackupState((prev) => ({ ...prev, needsFolderPermission: false, errorMessage: null }));
+    const writeRes = await runAutoBackupNow();
+    return writeRes.ok ? res : writeRes;
+  }, [runAutoBackupNow]);
+
+  const handleClearAutoBackupFolder = useCallback(async () => {
+    await clearSavedFolderHandle();
+    setAutoBackupState((prev) => ({
+      ...prev,
+      linkedFolderName: null,
+      needsFolderPermission: false,
+      targetType: isOpfsSupported() ? 'opfs' : 'idb',
+    }));
+    if (settings.autoBackupEnabled) {
+      await runAutoBackupNow();
+    }
+  }, [runAutoBackupNow, settings.autoBackupEnabled]);
+
+  const handleDownloadAutoBackup = useCallback(async (): Promise<{
+    ok: boolean;
+    message: string;
+  }> => {
+    const found = await readLatestAutoBackupText(
+      settings.autoBackupFolder,
+      settings.autoBackupFileName
+    );
+    if (!found) {
+      return { ok: false, message: 'No auto-backup JSON file exists yet. Click Overwrite Now first.' };
+    }
+    const blob = new Blob([found.text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = found.fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+    return { ok: true, message: `Downloaded latest auto-backup (${found.fileName}).` };
+  }, [settings.autoBackupFolder, settings.autoBackupFileName]);
+
+  const handleRestoreAutoBackup = useCallback(async (): Promise<{
+    ok: boolean;
+    message: string;
+  }> => {
+    const found = await readLatestAutoBackupText(
+      settings.autoBackupFolder,
+      settings.autoBackupFileName
+    );
+    if (!found) {
+      return { ok: false, message: 'No auto-backup JSON file found to restore.' };
+    }
+    try {
+      const parsed = JSON.parse(found.text) as Partial<BackupPayload>;
+      return await handleApplyBackupPayload(parsed);
+    } catch {
+      return { ok: false, message: 'Stored auto-backup JSON file is corrupted.' };
+    }
+  }, [handleApplyBackupPayload, settings.autoBackupFolder, settings.autoBackupFileName]);
 
   const handleResetDemoData = useCallback(async () => {
     const existingWallpaper = await getImage(CUSTOM_WALLPAPER_IMAGE_ID);
@@ -610,9 +791,16 @@ export default function App() {
         open={settingsOpen}
         settings={settings}
         customWallpaperUrl={customWallpaperUrl}
+        autoBackupState={autoBackupState}
         onUpdateSettings={handleUpdateSettings}
         onUploadWallpaper={handleUploadWallpaper}
         onRemoveWallpaper={handleRemoveWallpaper}
+        onPickAutoBackupFolder={handlePickAutoBackupFolder}
+        onResumeAutoBackupFolder={handleResumeAutoBackupFolder}
+        onClearAutoBackupFolder={handleClearAutoBackupFolder}
+        onRunAutoBackupNow={runAutoBackupNow}
+        onDownloadAutoBackup={handleDownloadAutoBackup}
+        onRestoreAutoBackup={handleRestoreAutoBackup}
         onBuildBackupPayload={handleBuildBackupPayload}
         onApplyBackupPayload={handleApplyBackupPayload}
         onBackupJson={handleBackupJson}

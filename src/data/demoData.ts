@@ -29,6 +29,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   wallpaperDim: 45,
   wallpaperBlur: 2,
   windowOpacity: 70,
+  autoBackupEnabled: true,
+  autoBackupFolder: 'tradebook-backups',
+  autoBackupFileName: 'tradebook-autobackup.json',
 };
 
 export function createDefaultChecklist(): ChecklistItem[] {
