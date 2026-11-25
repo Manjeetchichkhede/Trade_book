@@ -78,7 +78,18 @@ const CURSOR_EFFECTS: { id: CursorEffectId; label: string; desc: string }[] = [
 
 const CHANGELOG_HISTORY: { version: string; date: string; highlights: string[] }[] = [
   {
-    version: 'v2.6.0 Glass Edition',
+    version: 'v2.7.0 Glass Edition',
+    date: 'Nov 2026',
+    highlights: [
+      'Inline Clock Design switcher right inside Overview clocks with new Swiss Railway & Chronograph analog dials',
+      'Added full New York Session (08:00–17:00 NY) with auto-DST IST sync & Sessions filter pill',
+      'Minimalistic 24H Session Timeline with IST 24H / NY 24H toggle, midnight wrap-around & live NOW marker',
+      'Auto-Backup JSON that silently overwrites on every change via zero-permission local device vault (OPFS)',
+      'Added Files & Folder Storage Permissions to create local backup subfolders on device & Persistent Storage protection',
+    ],
+  },
+  {
+    version: 'v2.6.0',
     date: 'Nov 2026',
     highlights: [
       'Journal split layout: Pre-Trade Checklist on left & fast Quick Trade Logger on right',
@@ -86,7 +97,6 @@ const CHANGELOG_HISTORY: { version: string; date: string; highlights: string[] }
       'Overview live analog IST & NY clocks and streamlined Hero layout',
       'Unified Lot Size calculator with live Recommended Lot Size panel on the right',
       'Added Google Sans & Play fonts, Windows Opacity control, 5 Mouse Cursor Effects & Zoom Lock',
-      'Zero-permission Auto-Backup JSON that overwrites automatically on every change with custom folder location',
     ],
   },
   {
@@ -868,7 +878,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <p className="text-sm text-[var(--text-secondary)]">
                   <span className="text-[var(--text-muted)]">Software Version: </span>
                   <span className="font-mono-num font-medium text-[var(--accent-text)]">
-                    v2.6.0 Glass Edition
+                    v2.7.0 Glass Edition
                   </span>
                 </p>
               </div>
@@ -882,7 +892,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 Changelog &amp; Version History
               </p>
               <span className="font-mono-num text-[11px] text-[var(--text-muted)]">
-                Latest: v2.6.0
+                Latest: v2.7.0
               </span>
             </div>
 

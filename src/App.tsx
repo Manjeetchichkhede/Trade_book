@@ -398,7 +398,7 @@ export default function App() {
   const handleBuildBackupPayload = useCallback(async (): Promise<BackupPayload> => {
     const images = await getAllImages();
     return {
-      version: '2.6.0',
+      version: '2.7.0',
       exportedAt: new Date().toISOString(),
       accounts,
       trades,
