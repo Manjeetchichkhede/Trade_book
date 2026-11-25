@@ -8,7 +8,7 @@ export type TabId =
 
 export type ThemeId = 'dark' | 'light' | 'monochrome' | 'bw';
 export type FontId = 'inter' | 'google-sans' | 'play' | 'ubuntu' | 'ios' | 'comfortaa' | 'mono';
-export type ClockStyleId = 'roman' | 'modern' | 'neon' | 'digital';
+export type ClockStyleId = 'roman' | 'modern' | 'neon' | 'swiss' | 'chronograph' | 'digital';
 export type CurrencyId = 'USD' | 'INR';
 export type DstMode = 'auto' | 'winter' | 'summer';
 export type CursorEffectId =

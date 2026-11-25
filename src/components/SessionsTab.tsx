@@ -2,19 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Clock } from 'lucide-react';
 import { AppSettings, ClockStyleId, DstMode } from '../types';
 import { evaluateSessions, getIstAndNyClocks } from '../utils/sessions';
-import { AnalogDial } from './AnalogDial';
+import { AnalogDial, CLOCK_STYLES } from './AnalogDial';
 
 interface SessionsTabProps {
   settings: AppSettings;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
 }
-
-const CLOCK_STYLES: { id: ClockStyleId; label: string }[] = [
-  { id: 'roman', label: 'Roman Classic' },
-  { id: 'modern', label: 'Modern Minimal' },
-  { id: 'neon', label: 'Neon Terminal' },
-  { id: 'digital', label: 'Digital Only' },
-];
 
 const DST_OPTIONS: { id: DstMode; label: string }[] = [
   { id: 'auto', label: 'Auto DST' },

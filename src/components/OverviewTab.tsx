@@ -12,10 +12,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { ShieldAlert, ShieldCheck } from 'lucide-react';
-import { AnalogDial } from './AnalogDial';
+import { Clock, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { AnalogDial, CLOCK_STYLES } from './AnalogDial';
 import {
   AppSettings,
+  ClockStyleId,
   PropAccount,
   RoiEntry,
   TabId,
@@ -34,6 +35,7 @@ interface OverviewTabProps {
   trades: Trade[];
   roiEntries: RoiEntry[];
   settings: AppSettings;
+  onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onNavigateTab: (tab: TabId) => void;
 }
 
@@ -42,6 +44,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   trades,
   roiEntries,
   settings,
+  onUpdateSettings,
   onNavigateTab,
 }) => {
   const [now, setNow] = useState<Date>(() => new Date());
@@ -127,39 +130,80 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
           </div>
 
-          {/* Live Ticking IST & NY Analog Clocks */}
+          {/* Live Ticking IST & NY Clocks with Inline Design Switcher */}
           {settings.liveClocksOverview && (
-            <div className="grid grid-cols-2 gap-3 lg:w-auto shrink-0">
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 flex flex-col items-center text-center min-w-[144px]">
-                <div className="flex items-center justify-between w-full text-[10px] text-[var(--text-muted)] mb-1.5">
-                  <span className="font-semibold text-[var(--text-secondary)]">India (IST)</span>
-                  <span>UTC+5:30</span>
-                </div>
-                <AnalogDial
-                  clock={clocks.ist}
-                  styleId={settings.clockStyle}
-                  sizeClass="w-24 h-24 sm:w-28 sm:h-28"
-                />
-                <p className="mt-1.5 font-mono-num text-[11px] font-semibold text-[var(--text-primary)] whitespace-nowrap">
-                  {clocks.ist.formatted12} {clocks.ist.ampm}
-                </p>
-                <p className="text-[10px] text-[var(--text-muted)]">{clocks.ist.dateLabel}</p>
+            <div className="space-y-2.5 lg:w-auto shrink-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-muted)]">
+                  <Clock className="w-3.5 h-3.5 text-[var(--accent-text)]" />
+                  Clock Design
+                </span>
+                <select
+                  aria-label="Overview Clock Design"
+                  value={settings.clockStyle}
+                  onChange={(e) =>
+                    onUpdateSettings({ clockStyle: e.target.value as ClockStyleId })
+                  }
+                  className="tb-input rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer"
+                >
+                  {CLOCK_STYLES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 flex flex-col items-center text-center min-w-[144px]">
-                <div className="flex items-center justify-between w-full text-[10px] text-[var(--text-muted)] mb-1.5">
-                  <span className="font-semibold text-[var(--text-secondary)]">New York</span>
-                  <span>{clocks.ny.offsetLabel.split(' ')[0]}</span>
-                </div>
-                <AnalogDial
-                  clock={clocks.ny}
-                  styleId={settings.clockStyle}
-                  sizeClass="w-24 h-24 sm:w-28 sm:h-28"
-                />
-                <p className="mt-1.5 font-mono-num text-[11px] font-semibold text-[var(--text-primary)] whitespace-nowrap">
-                  {clocks.ny.formatted12} {clocks.ny.ampm}
-                </p>
-                <p className="text-[10px] text-[var(--text-muted)]">{clocks.ny.dateLabel}</p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'India (IST)', tzTag: 'UTC+5:30', clock: clocks.ist },
+                  {
+                    label: 'New York',
+                    tzTag: clocks.ny.offsetLabel.split(' ')[0],
+                    clock: clocks.ny,
+                  },
+                ].map(({ label, tzTag, clock }) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-4 py-3 flex flex-col items-center text-center min-w-[144px]"
+                  >
+                    <div className="flex items-center justify-between w-full text-[10px] text-[var(--text-muted)] mb-1.5">
+                      <span className="font-semibold text-[var(--text-secondary)]">{label}</span>
+                      <span>{tzTag}</span>
+                    </div>
+
+                    {settings.clockStyle === 'digital' ? (
+                      <div className="flex flex-col items-center justify-center h-24 sm:h-28 w-full">
+                        <p className="font-mono-num text-2xl sm:text-[26px] font-bold tracking-tight text-[var(--text-primary)] whitespace-nowrap">
+                          {clock.formatted24}
+                        </p>
+                        <p className="mt-1 font-mono-num text-[11px] font-semibold text-[var(--accent-text)] whitespace-nowrap">
+                          {clock.formatted12} {clock.ampm}
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <AnalogDial
+                          clock={clock}
+                          styleId={settings.clockStyle}
+                          sizeClass="w-24 h-24 sm:w-28 sm:h-28"
+                        />
+                        <p
+                          className="mt-1.5 font-mono-num text-[11px] font-semibold whitespace-nowrap"
+                          style={{
+                            color:
+                              settings.clockStyle === 'neon'
+                                ? '#38bdf8'
+                                : 'var(--text-primary)',
+                          }}
+                        >
+                          {clock.formatted12} {clock.ampm}
+                        </p>
+                      </>
+                    )}
+                    <p className="text-[10px] text-[var(--text-muted)]">{clock.dateLabel}</p>
+                  </div>
+                ))}
               </div>
             </div>
           )}

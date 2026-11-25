@@ -795,6 +795,7 @@ export default function App() {
                   trades={trades}
                   roiEntries={roiEntries}
                   settings={settings}
+                  onUpdateSettings={handleUpdateSettings}
                   onNavigateTab={setActiveTab}
                 />
               )}

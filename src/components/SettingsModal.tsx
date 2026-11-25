@@ -14,7 +14,6 @@ import {
   AppSettings,
   AutoBackupState,
   BackupPayload,
-  ClockStyleId,
   CurrencyId,
   CursorEffectId,
   FontId,
@@ -22,6 +21,7 @@ import {
 } from '../types';
 import { compressImageFile } from '../db/storage';
 import { WALLPAPER_PRESETS } from '../data/wallpapers';
+import { CLOCK_STYLES } from './AnalogDial';
 import { TradebookLogo } from './TradebookLogo';
 import { AutoBackupCard } from './AutoBackupCard';
 import { GoogleDriveBackupCard } from './GoogleDriveBackupCard';
@@ -115,13 +115,6 @@ const CHANGELOG_HISTORY: { version: string; date: string; highlights: string[] }
       'IST & New York Killzone clocks, Prop Challenge ROI ledger, and Playbook audit',
     ],
   },
-];
-
-const CLOCK_STYLES: { id: ClockStyleId; label: string }[] = [
-  { id: 'roman', label: 'Roman Classic' },
-  { id: 'modern', label: 'Modern Minimal' },
-  { id: 'neon', label: 'Neon Terminal' },
-  { id: 'digital', label: 'Digital Only' },
 ];
 
 const TOGGLE_ITEMS: { key: keyof AppSettings; label: string; desc: string }[] = [
